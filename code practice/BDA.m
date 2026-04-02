@@ -127,6 +127,7 @@ function [acc,acc_ite,A] = BDA(X_src,Y_src,X_tar,Y_tar,options)
                 N = N + e*e';
             end
         end
+        mu = 0.2;
         M = (1 - mu) * M0 + mu * N;
         M = M / norm(M,'fro');
         
@@ -148,7 +149,7 @@ function [acc,acc_ite,A] = BDA(X_src,Y_src,X_tar,Y_tar,options)
         knn_model = fitcknn(Zs,Y_src,'NumNeighbors',1);
         Y_tar_pseudo = knn_model.predict(Zt);
         acc = length(find(Y_tar_pseudo==Y_tar))/length(Y_tar); 
-        fprintf('Iteration [%2d]:BDA+NN=%0.4f\n',i,acc);
+%         fprintf('Iteration [%2d]:BDA+NN=%0.4f\n',i,acc);
         acc_ite = [acc_ite;acc];
 	end
 
