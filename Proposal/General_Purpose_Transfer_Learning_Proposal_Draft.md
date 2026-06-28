@@ -6,21 +6,21 @@ Student's Name: Hasnain Sheikh
 Student's Roll: BSSE-1408  
 Phone: 01521709896
 
-Project Title: General Purpose Transfer Learning Framework for Multi-Domain Text Classification
+Project Title: General Purpose Transfer Learning Framework for Multi-Domain Classification
 
 ## Project Description (within 200 words)
-Modern machine learning models perform well when large labeled datasets are available, but many practical domains in Bangla and low-resource settings have limited labeled data. This project proposes a general purpose transfer learning framework that can adapt a pre-trained language model to multiple downstream text classification tasks with minimal domain-specific data. The framework will support source-task pretraining, target-task fine-tuning, domain adaptation, and robust evaluation under low-data constraints. It will include reusable data preprocessing pipelines, model training modules, and experiment tracking for reproducibility. Target use cases include sentiment analysis, fake-news detection, and topic classification, where labels are scarce and data distributions vary across domains. The expected outcome is a modular system that reduces training cost, improves accuracy on low-resource tasks, and provides a practical baseline for future research at IIT. The project will also compare transfer learning strategies such as full fine-tuning, feature-based transfer, and parameter-efficient methods (e.g., adapters/LoRA), highlighting which approach works best under different data sizes and domain shifts.
+Modern machine learning models perform well when large labeled datasets are available, but many practical domains and low-resource settings have limited labeled data. This project proposes a general purpose transfer learning framework that can adapt pre-trained models to multiple downstream classification tasks with minimal domain-specific data. The framework will support source-task pretraining, target-task fine-tuning, domain adaptation, and robust evaluation under low-data constraints. It will include reusable data preprocessing pipelines, model training modules, and experiment tracking for reproducibility. Target use cases include sentiment analysis, defect prediction, medical diagnosis support, and visual category classification, where labels are scarce and data distributions vary across domains. The expected outcome is a modular system that reduces training cost, improves accuracy on low-resource tasks, and provides a practical baseline for future research at IIT. The project will also compare transfer learning strategies such as full fine-tuning, feature-based transfer, and parameter-efficient methods (e.g., adapters/LoRA), highlighting which approach works best under different data sizes and domain shifts.
 
 ## Motivation
-Building a separate model from scratch for every new task is expensive, time-consuming, and often infeasible when labeled data is limited. In academic and industry settings, a reusable transfer learning framework can significantly reduce development effort while improving model quality. For Bangla and mixed-domain textual applications, this need is even stronger due to annotation scarcity and domain mismatch.
+Building a separate model from scratch for every new task is expensive, time-consuming, and often infeasible when labeled data is limited. In academic and industry settings, a reusable transfer learning framework can significantly reduce development effort while improving model quality. For heterogeneous, mixed-domain applications, this need is even stronger due to annotation scarcity and domain mismatch.
 
-The motivation of this project is to design a practical and extensible pipeline that enables fast adaptation from general language understanding to specific tasks. Instead of creating one task-specific solution, the project focuses on a framework that can be reused across multiple NLP problems.
+The motivation of this project is to design a practical and extensible pipeline that enables fast adaptation from general representation learning to specific tasks. Instead of creating one task-specific solution, the project focuses on a framework that can be reused across multiple machine learning domains.
 
 ## Project Scope and Features
-1. Unified data pipeline for loading, cleaning, tokenization, and train/validation/test splitting.
-2. Support for multiple datasets and domains (e.g., sentiment, news, topic).
+1. Unified data pipeline for loading, cleaning/normalization, feature preparation, and train/validation/test splitting.
+2. Support for multiple datasets and domains (e.g., text, tabular, image, time-series).
 3. Baseline model training from scratch for comparison.
-4. Transfer learning with pre-trained transformer models (BERT/DistilBERT/XLM-R).
+4. Transfer learning with pre-trained backbones (e.g., BERT/DistilBERT for text, ResNet/ViT for images, and MLP/sequence models for tabular and temporal data).
 5. Parameter-efficient tuning support (LoRA/adapters) for low-compute environments.
 6. Cross-domain evaluation to measure generalization performance.
 7. Experiment tracking and model versioning for reproducibility.
@@ -39,7 +39,7 @@ The motivation of this project is to design a practical and extensible pipeline 
 ## Languages and Technologies
 - Language: Python
 - Deep Learning Framework: PyTorch
-- NLP/Transformers: Hugging Face Transformers, Tokenizers
+- Model Libraries: Hugging Face Transformers, timm/torchvision, Tokenizers
 - Supporting Libraries: scikit-learn, pandas, numpy, matplotlib, seaborn
 - Optional PEFT: peft, accelerate
 - Experiment Tracking: Weights & Biases / TensorBoard
