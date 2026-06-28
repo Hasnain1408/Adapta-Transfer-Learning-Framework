@@ -23,8 +23,12 @@ class CSVDatasetLoader:
 
         features_df = dataframe.iloc[:, :-1].apply(pd.to_numeric, errors="coerce").fillna(0.0)
         labels_series = dataframe.iloc[:, -1]
+        feature_names = [str(column) for column in dataframe.columns[:-1]]
+        label_name = str(dataframe.columns[-1])
 
         return Dataset(
             features=features_df.to_numpy(dtype=float),
             labels=labels_series.to_numpy(),
+            feature_names=feature_names,
+            label_name=label_name,
         )

@@ -29,6 +29,8 @@ class RunTransferLearningUseCase:
         ]
 
         return TransferLearningResult(
+            source_dataset=source_dataset,
+            target_dataset=target_dataset,
             transformed_target=transformed_target,
             output_feature_names=output_feature_names,
         )

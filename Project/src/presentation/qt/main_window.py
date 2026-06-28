@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -48,6 +49,15 @@ class MainWindow(QMainWindow):
         self._run_button = QPushButton("Run Transfer Learning")
         self._status_label = QLabel("Status: Ready")
 
+        self._dataset_summary_table = QTableWidget()
+        self._dataset_summary_table.setColumnCount(5)
+        self._dataset_summary_table.setHorizontalHeaderLabels(
+            ["Dataset", "Rows", "Feature Size", "Feature Names", "Label Name"]
+        )
+        self._dataset_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._dataset_summary_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self._dataset_summary_table.setFocusPolicy(Qt.NoFocus)
+
         self._result_table = QTableWidget()
         self._result_table.setColumnCount(0)
         self._result_table.setRowCount(0)
@@ -79,6 +89,8 @@ class MainWindow(QMainWindow):
 
         root_layout.addLayout(form_layout)
         root_layout.addLayout(action_layout)
+        root_layout.addWidget(QLabel("Source and Target Dataset Summary"))
+        root_layout.addWidget(self._dataset_summary_table)
         root_layout.addWidget(QLabel("Transformed Target Dataset (preview)"))
         root_layout.addWidget(self._result_table)
 
@@ -128,6 +140,7 @@ class MainWindow(QMainWindow):
 
     def _on_success(self, result: TransferLearningResult) -> None:
         self._status_label.setText("Status: Completed")
+        self._show_dataset_summary(result.source_dataset, result.target_dataset)
         self._show_result(result.transformed_target, result.output_feature_names)
 
     def _on_error(self, message: str) -> None:
@@ -147,3 +160,29 @@ class MainWindow(QMainWindow):
             for col in range(col_count):
                 value = f"{matrix[row, col]:.6f}"
                 self._result_table.setItem(row, col, QTableWidgetItem(value))
+
+    def _show_dataset_summary(self, source_dataset, target_dataset) -> None:
+        summaries = [
+            ("Source", source_dataset),
+            ("Target", target_dataset),
+        ]
+
+        self._dataset_summary_table.setRowCount(len(summaries))
+
+        for row, (dataset_label, dataset) in enumerate(summaries):
+            feature_names = ", ".join(dataset.feature_names)
+            values = [
+                dataset_label,
+                str(dataset.features.shape[0]),
+                str(dataset.features.shape[1]),
+                feature_names,
+                dataset.label_name,
+            ]
+
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col == 3:
+                    item.setToolTip(feature_names)
+                self._dataset_summary_table.setItem(row, col, item)
+
+        self._dataset_summary_table.resizeColumnsToContents()

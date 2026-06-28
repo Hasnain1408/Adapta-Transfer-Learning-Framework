@@ -13,6 +13,8 @@ class TransferLearningRequest:
     
 @dataclass(frozen=True)
 class TransferLearningResult:
+    source_dataset: "Dataset"
+    target_dataset: "Dataset"
     transformed_target: np.ndarray
     output_feature_names: list[str]
 
@@ -20,3 +22,5 @@ class TransferLearningResult:
 class Dataset:
     features: np.ndarray
     labels: Optional[np.ndarray]
+    feature_names: list[str]
+    label_name: str
