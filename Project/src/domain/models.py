@@ -12,11 +12,21 @@ class TransferLearningRequest:
   
     
 @dataclass(frozen=True)
+class EvaluationMetrics:
+    accuracy: float
+    precision: float
+    recall: float
+    f1_score: float
+
+
+@dataclass(frozen=True)
 class TransferLearningResult:
     source_dataset: "Dataset"
     target_dataset: "Dataset"
+    transformed_source: np.ndarray
     transformed_target: np.ndarray
     output_feature_names: list[str]
+    metrics: Optional[EvaluationMetrics] = None
 
 @dataclass(frozen=True)
 class Dataset:

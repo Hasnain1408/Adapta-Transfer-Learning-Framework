@@ -15,7 +15,7 @@ class TCAMethod(TransferLearningMethod):
     def name(self) -> str:
         return "TCA"
 
-    def run(self, source_features: np.ndarray, target_features: np.ndarray) -> np.ndarray:
+    def run(self, source_features: np.ndarray, target_features: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         source_size = source_features.shape[0]
         target_size = target_features.shape[0]
         total_size = source_size + target_size
@@ -50,5 +50,6 @@ class TCAMethod(TransferLearningMethod):
         norms[norms == 0] = 1.0
         transformed_all = transformed_all / norms
 
+        transformed_source = transformed_all[:source_size, :]
         transformed_target = transformed_all[source_size:, :]
-        return transformed_target
+        return transformed_source, transformed_target

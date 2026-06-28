@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
 )
 
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
-from domain.models import TransferLearningRequest, TransferLearningResult
+from domain.models import TransferLearningRequest, TransferLearningResult, EvaluationMetrics
 from presentation.qt.worker import TransferLearningWorker
 
 
@@ -58,6 +58,19 @@ class MainWindow(QMainWindow):
         self._dataset_summary_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._dataset_summary_table.setFocusPolicy(Qt.NoFocus)
 
+        self._metrics_table = QTableWidget()
+        self._metrics_table.setColumnCount(4)
+        self._metrics_table.setHorizontalHeaderLabels(
+            ["Accuracy", "Precision", "Recall", "F1 Score"]
+        )
+        self._metrics_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._metrics_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self._metrics_table.setFocusPolicy(Qt.NoFocus)
+        self._metrics_table.setRowCount(1)
+        self._metrics_table.setFixedHeight(60)
+        for col in range(4):
+            self._metrics_table.setItem(0, col, QTableWidgetItem("N/A"))
+
         self._result_table = QTableWidget()
         self._result_table.setColumnCount(0)
         self._result_table.setRowCount(0)
@@ -91,6 +104,8 @@ class MainWindow(QMainWindow):
         root_layout.addLayout(action_layout)
         root_layout.addWidget(QLabel("Source and Target Dataset Summary"))
         root_layout.addWidget(self._dataset_summary_table)
+        root_layout.addWidget(QLabel("KNN Evaluation Metrics (Trained on Source, Tested on Target)"))
+        root_layout.addWidget(self._metrics_table)
         root_layout.addWidget(QLabel("Transformed Target Dataset (preview)"))
         root_layout.addWidget(self._result_table)
 
@@ -142,6 +157,7 @@ class MainWindow(QMainWindow):
         self._status_label.setText("Status: Completed")
         self._show_dataset_summary(result.source_dataset, result.target_dataset)
         self._show_result(result.transformed_target, result.output_feature_names)
+        self._show_metrics(result.metrics)
 
     def _on_error(self, message: str) -> None:
         self._status_label.setText("Status: Failed")
@@ -186,3 +202,21 @@ class MainWindow(QMainWindow):
                 self._dataset_summary_table.setItem(row, col, item)
 
         self._dataset_summary_table.resizeColumnsToContents()
+
+    def _show_metrics(self, metrics: EvaluationMetrics | None) -> None:
+        if metrics is None:
+            for col in range(4):
+                self._metrics_table.setItem(0, col, QTableWidgetItem("N/A"))
+            return
+
+        values = [
+            f"{metrics.accuracy:.4f}",
+            f"{metrics.precision:.4f}",
+            f"{metrics.recall:.4f}",
+            f"{metrics.f1_score:.4f}"
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(val)
+            item.setTextAlignment(Qt.AlignCenter)
+            self._metrics_table.setItem(0, col, item)
+        self._metrics_table.resizeColumnsToContents()

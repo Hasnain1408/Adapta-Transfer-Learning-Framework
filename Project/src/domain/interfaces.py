@@ -20,5 +20,5 @@ class TransferLearningMethod(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def run(self, source_features: np.ndarray, target_features: np.ndarray) -> np.ndarray:
+    def run(self, source_features: np.ndarray, target_features: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError
