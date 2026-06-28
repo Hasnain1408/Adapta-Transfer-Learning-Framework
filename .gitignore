@@ -54,3 +54,9 @@ Thumbs.db
 
 # Test directories with large external code
 code practice/static_metric_extractor/test/fprime/
+
+# Other files
+code
+Papers
+Proposal
+Project/src/__pycache__
