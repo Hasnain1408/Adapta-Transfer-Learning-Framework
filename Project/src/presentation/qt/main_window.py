@@ -158,9 +158,9 @@ class MainWindow(QMainWindow):
         self._method_combo.addItems(["TCA", "JDA", "CORAL", "BDA", "OCMTL"])
 
         self._source_input = QLineEdit()
-        self._source_input.setPlaceholderText("Select source CSV or XLSX dataset")
+        self._source_input.setPlaceholderText("Select source CSV, XLSX, or MAT dataset")
         self._target_input = QLineEdit()
-        self._target_input.setPlaceholderText("Select target CSV or XLSX dataset")
+        self._target_input.setPlaceholderText("Select target CSV, XLSX, or MAT dataset")
 
         self._browse_source_button = QPushButton("Browse")
         self._browse_source_button.setObjectName("browseButton")
@@ -266,7 +266,7 @@ class MainWindow(QMainWindow):
             self,
             "Select Dataset",
             str(Path.cwd()),
-            "Dataset Files (*.csv *.xlsx);;CSV Files (*.csv);;Excel Files (*.xlsx)",
+            "Dataset Files (*.csv *.xlsx *.mat);;CSV Files (*.csv);;Excel Files (*.xlsx);;MAT Files (*.mat)",
         )
         if file_path:
             target_input.setText(file_path)
