@@ -155,8 +155,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(STYLE_SHEET)
 
         self._method_combo = QComboBox()
-        self._method_combo.addItems(["TCA"])
-        self._method_combo.addItems(["JDA"])
+        self._method_combo.addItems(["TCA", "JDA", "CORAL", "BDA", "OCMTL"])
 
         self._source_input = QLineEdit()
         self._source_input.setPlaceholderText("Select source CSV or XLSX dataset")
