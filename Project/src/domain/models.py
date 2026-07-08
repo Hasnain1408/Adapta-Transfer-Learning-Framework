@@ -17,6 +17,9 @@ class EvaluationMetrics:
     precision: float
     recall: float
     f1_score: float
+    total_samples: int
+    correct_predictions: int
+    wrong_predictions: int
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,9 @@ class TransferLearningResult:
     transformed_target: np.ndarray
     output_feature_names: list[str]
     metrics: Optional[EvaluationMetrics] = None
+    target_predictions: Optional[np.ndarray] = None
+    target_actuals: Optional[np.ndarray] = None
+    prediction_correctness: Optional[list[str]] = None
 
 @dataclass(frozen=True)
 class Dataset:
