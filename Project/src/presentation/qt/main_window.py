@@ -4,7 +4,8 @@ from pathlib import Path
 
 import numpy as np
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QIcon, QColor, QBrush
+from PyQt5.QtGui import QFont, QIcon, QColor, QBrush, QTextDocument
+from PyQt5.QtPrintSupport import QPrinter
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -67,6 +68,13 @@ class MainWindow(QMainWindow):
         self._run_button.setCursor(Qt.PointingHandCursor)
         self._run_button.setIcon(style.standardIcon(QStyle.SP_MediaPlay))
         self._run_button.setMinimumHeight(42)
+
+        self._export_button = QPushButton("Export PDF Report")
+        self._export_button.setObjectName("exportButton")
+        self._export_button.setCursor(Qt.PointingHandCursor)
+        self._export_button.setIcon(style.standardIcon(QStyle.SP_DialogSaveButton))
+        self._export_button.setMinimumHeight(42)
+        self._export_button.setEnabled(False)
 
         self._status_dot = QLabel("\u25cf")
         self._status_label = QLabel()
@@ -182,6 +190,7 @@ class MainWindow(QMainWindow):
         action_layout = QHBoxLayout()
         action_layout.setSpacing(14)
         action_layout.addWidget(self._run_button)
+        action_layout.addWidget(self._export_button)
 
         status_frame = QFrame()
         status_frame.setObjectName("statusCard")
@@ -211,6 +220,7 @@ class MainWindow(QMainWindow):
         self._browse_source_button.clicked.connect(lambda: self._pick_file(self._source_input))
         self._browse_target_button.clicked.connect(lambda: self._pick_file(self._target_input))
         self._run_button.clicked.connect(self._run_transfer_learning)
+        self._export_button.clicked.connect(self._export_pdf_report)
 
     def _pick_file(self, target_input: QLineEdit) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -251,6 +261,8 @@ class MainWindow(QMainWindow):
 
     def _on_success(self, result: TransferLearningResult) -> None:
         self._set_status("Completed", "#10b981")
+        self._last_result = result
+        self._export_button.setEnabled(True)
         self._show_dataset_summary(result.source_dataset, result.target_dataset)
         self._show_metrics(result.metrics)
         self._show_result(result)
@@ -359,3 +371,69 @@ class MainWindow(QMainWindow):
             item.setTextAlignment(Qt.AlignCenter)
             self._metrics_table.setItem(0, col, item)
         self._metrics_table.resizeColumnsToContents()
+
+    def _export_pdf_report(self) -> None:
+        if not hasattr(self, "_last_result") or not self._last_result:
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save PDF Report",
+            "Transfer_Learning_Report.pdf",
+            "PDF Files (*.pdf)"
+        )
+
+        if not file_path:
+            return
+
+        result = self._last_result
+        metrics = result.metrics
+
+        html = "<html><head><style>"
+        html += "body { font-family: Arial, sans-serif; }"
+        html += "table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }"
+        html += "th, td { border: 1px solid #dddddd; text-align: left; padding: 8px; }"
+        html += "th { background-color: #f2f2f2; }"
+        html += "</style></head><body>"
+        html += "<h1>Transfer Learning Evaluation Report</h1>"
+
+        html += "<h2>Dataset Summary</h2>"
+        html += "<table>"
+        html += "<tr><th>Dataset</th><th>Rows</th><th>Feature Size</th><th>Label Name</th></tr>"
+        html += f"<tr><td>Source</td><td>{result.source_dataset.features.shape[0]}</td><td>{result.source_dataset.features.shape[1]}</td><td>{result.source_dataset.label_name}</td></tr>"
+        html += f"<tr><td>Target</td><td>{result.target_dataset.features.shape[0]}</td><td>{result.target_dataset.features.shape[1]}</td><td>{result.target_dataset.label_name}</td></tr>"
+        html += "</table>"
+
+        if metrics:
+            html += "<h2>Evaluation Metrics</h2>"
+            html += "<table>"
+            html += "<tr><th>Total Samples</th><th>Correct</th><th>Wrong</th><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1 Score</th></tr>"
+            html += f"<tr><td>{metrics.total_samples}</td><td>{metrics.correct_predictions}</td><td>{metrics.wrong_predictions}</td>"
+            html += f"<td>{metrics.accuracy:.4f}</td><td>{metrics.precision:.4f}</td><td>{metrics.recall:.4f}</td><td>{metrics.f1_score:.4f}</td></tr>"
+            html += "</table>"
+
+        if result.target_predictions is not None:
+            html += "<h2>Predictions</h2>"
+            html += "<table>"
+            html += "<tr><th>Sample Name</th><th>Actual Label</th><th>Predicted Label</th><th>Prediction</th></tr>"
+            for row in range(result.target_predictions.shape[0]):
+                sample_name = f"Sample {row + 1}"
+                actual_val = str(result.target_actuals[row])
+                pred_val = str(result.target_predictions[row])
+                correctness_val = result.prediction_correctness[row]
+                
+                color = "green" if correctness_val == "Right" else "red"
+                html += f"<tr><td>{sample_name}</td><td>{actual_val}</td><td>{pred_val}</td><td style='color:{color}; font-weight:bold;'>{correctness_val}</td></tr>"
+            html += "</table>"
+
+        html += "</body></html>"
+
+        document = QTextDocument()
+        document.setHtml(html)
+
+        printer = QPrinter(QPrinter.HighResolution)
+        printer.setOutputFormat(QPrinter.PdfFormat)
+        printer.setOutputFileName(file_path)
+        document.print_(printer)
+
+        QMessageBox.information(self, "Export Successful", f"PDF report successfully saved to:\n{file_path}")
