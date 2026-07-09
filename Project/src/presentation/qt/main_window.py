@@ -320,10 +320,22 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Invalid Path", "One or more selected dataset files do not exist.")
             return
 
+        try:
+            reg_val = float(self._reg_input.text().strip())
+            dim_val = int(self._dim_input.text().strip())
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Regularization must be a float and Latent Dim must be an integer.")
+            return
+
         request = TransferLearningRequest(
             method_name=self._method_combo.currentText(),
             source_path=source_path,
             target_path=target_path,
+            normalization=self._norm_combo.currentText(),
+            standardization=self._std_combo.currentText(),
+            kernel_type=self._kernel_combo.currentText(),
+            regularization=reg_val,
+            latent_dim=dim_val,
         )
 
         self._run_button.setEnabled(False)
