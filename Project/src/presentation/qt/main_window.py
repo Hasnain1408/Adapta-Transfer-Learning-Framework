@@ -50,6 +50,54 @@ class MainWindow(QMainWindow):
         self._method_combo = QComboBox()
         self._method_combo.addItems(["TCA", "JDA", "CORAL", "BDA", "OCMTL"])
         self._method_combo.setMinimumHeight(38)
+        self._method_combo.setFixedWidth(200)
+
+        self._norm_combo = QComboBox()
+        self._norm_combo.addItems([
+            "None",
+            "Min-Max Normalization",
+            "Z-score Standardization",
+            "Robust Standardization",
+            "L1 normalization",
+            "L2 (Unit Vector) Normalization",
+            "Mean Centering",
+            "Column-wise unit norm",
+            "Row-wise unit norm",
+            "Frobenius normalization",
+            "Spectral normalization"
+        ])
+        self._norm_combo.setMinimumHeight(38)
+        self._norm_combo.setFixedWidth(200)
+
+
+        self._std_combo = QComboBox()
+        self._std_combo.addItems([
+            "None",
+            "Z-score Standardization",
+            "Robust Standardization",
+            "Mahalanobis Standardization",
+            "Variance Scaling",
+            "Column mean centering",
+            "Row mean centering"
+        ])
+        self._std_combo.setMinimumHeight(38)
+        self._std_combo.setFixedWidth(200)
+        self._kernel_combo = QComboBox()
+        self._kernel_combo.addItems([
+            "primal",
+            "linear",
+            "rbf"
+        ])
+        self._kernel_combo.setMinimumHeight(38)
+        self._kernel_combo.setFixedWidth(200)
+
+        self._reg_input = QLineEdit("1.0")
+        self._reg_input.setMinimumHeight(38)
+        self._reg_input.setFixedWidth(100)
+
+        self._dim_input = QLineEdit("10")
+        self._dim_input.setMinimumHeight(38)
+        self._dim_input.setFixedWidth(100)
 
         self._source_input = QLineEdit()
         self._source_input.setPlaceholderText("Select source CSV, XLSX, or MAT dataset")
@@ -183,6 +231,34 @@ class MainWindow(QMainWindow):
         form_layout.addWidget(self._create_field_label("Target Dataset"), 2, 0)
         form_layout.addWidget(self._target_input, 2, 1)
         form_layout.addWidget(self._browse_target_button, 2, 2)
+
+        combo_layout = QHBoxLayout()
+        combo_layout.addWidget(self._create_field_label("Normalization:"))
+        combo_layout.addSpacing(5)
+        combo_layout.addWidget(self._norm_combo)
+        combo_layout.addSpacing(20)
+        combo_layout.addWidget(self._create_field_label("Standardization:"))
+        combo_layout.addSpacing(5)
+        combo_layout.addWidget(self._std_combo)
+        combo_layout.addSpacing(20)
+        combo_layout.addWidget(self._create_field_label("Kernel Type:"))
+        combo_layout.addSpacing(5)
+        combo_layout.addWidget(self._kernel_combo)
+        combo_layout.addStretch()
+
+        form_layout.addLayout(combo_layout, 3, 0, 1, 3)
+
+        param_layout = QHBoxLayout()
+        param_layout.addWidget(self._create_field_label("Regularization:"))
+        param_layout.addSpacing(5)
+        param_layout.addWidget(self._reg_input)
+        param_layout.addSpacing(20)
+        param_layout.addWidget(self._create_field_label("Latent Dim:"))
+        param_layout.addSpacing(5)
+        param_layout.addWidget(self._dim_input)
+        param_layout.addStretch()
+
+        form_layout.addLayout(param_layout, 4, 0, 1, 3)
 
         root_layout.addWidget(config_group)
 

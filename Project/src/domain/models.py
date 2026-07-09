@@ -9,6 +9,11 @@ class TransferLearningRequest:
     method_name: str
     source_path: str
     target_path: str
+    normalization: str = "None"
+    standardization: str = "None"
+    kernel_type: str = "linear"
+    regularization: float = 1.0
+    latent_dim: int = 10
   
     
 @dataclass(frozen=True)

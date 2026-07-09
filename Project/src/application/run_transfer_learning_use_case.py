@@ -23,6 +23,58 @@ class RunTransferLearningUseCase:
         if source_dataset.features.size == 0 or target_dataset.features.size == 0:
             raise ValueError("Source and target datasets must contain at least one feature row.")
 
+        from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler, Normalizer
+        import scipy.linalg
+        
+        def apply_normalization(X, norm_type):
+            if norm_type == "Min-Max Normalization":
+                return MinMaxScaler().fit_transform(X)
+            elif norm_type == "Z-score Standardization":
+                return StandardScaler().fit_transform(X)
+            elif norm_type == "Robust Standardization":
+                return RobustScaler().fit_transform(X)
+            elif norm_type == "L1 normalization":
+                return Normalizer(norm='l1').fit_transform(X)
+            elif norm_type in ["L2 (Unit Vector) Normalization", "Row-wise unit norm"]:
+                return Normalizer(norm='l2').fit_transform(X)
+            elif norm_type == "Mean Centering":
+                return StandardScaler(with_std=False).fit_transform(X)
+            elif norm_type == "Column-wise unit norm":
+                return Normalizer(norm='l2').fit_transform(X.T).T
+            elif norm_type == "Frobenius normalization":
+                norm = np.linalg.norm(X, ord='fro')
+                return X / norm if norm > 0 else X
+            elif norm_type == "Spectral normalization":
+                norm = np.linalg.norm(X, ord=2)
+                return X / norm if norm > 0 else X
+            return X
+
+        def apply_standardization(X, std_type):
+            if std_type == "Z-score Standardization":
+                return StandardScaler().fit_transform(X)
+            elif std_type == "Robust Standardization":
+                return RobustScaler().fit_transform(X)
+            elif std_type == "Variance Scaling":
+                return StandardScaler(with_mean=False).fit_transform(X)
+            elif std_type == "Column mean centering":
+                return StandardScaler(with_std=False).fit_transform(X)
+            elif std_type == "Row mean centering":
+                return X - X.mean(axis=1, keepdims=True)
+            elif std_type == "Mahalanobis Standardization":
+                cov = np.cov(X, rowvar=False)
+                U, S, V = np.linalg.svd(cov)
+                S_inv_sqrt = np.diag(1.0 / np.sqrt(S + 1e-10))
+                W = U @ S_inv_sqrt @ U.T
+                mean = np.mean(X, axis=0)
+                return (X - mean) @ W
+            return X
+
+        source_features = apply_normalization(source_dataset.features.copy(), request.normalization)
+        target_features = apply_normalization(target_dataset.features.copy(), request.normalization)
+        
+        source_features = apply_standardization(source_features, request.standardization)
+        target_features = apply_standardization(target_features, request.standardization)
+
         method = self._methods[request.method_name]
         transformed_source, transformed_target = method.run(
             source_dataset.features,
