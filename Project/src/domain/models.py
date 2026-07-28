@@ -14,6 +14,7 @@ class TransferLearningRequest:
     kernel_type: str = "linear"
     regularization: float = 1.0
     latent_dim: int = 10
+    classifier: str = "k-NN"
   
     
 @dataclass(frozen=True)

@@ -3,14 +3,44 @@ from __future__ import annotations
 from domain.interfaces import DatasetLoader, TransferLearningMethod
 from domain.models import TransferLearningRequest, TransferLearningResult, EvaluationMetrics
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import numpy as np
+
+
+#: Request field -> the private attribute a method must expose to receive it.
+TUNABLE_PARAMETERS = {
+    "kernel_type": "_kernel_type",
+    "regularization": "_regularization",
+    "latent_dim": "_latent_dim",
+}
 
 
 class RunTransferLearningUseCase:
     def __init__(self, loader: DatasetLoader, methods: list[TransferLearningMethod]) -> None:
         self._loader = loader
         self._methods = {method.name: method for method in methods}
+
+    @property
+    def method_names(self) -> list[str]:
+        """Registered method names, in the order they were configured."""
+        return list(self._methods)
+
+    def supported_parameters(self, method_name: str) -> frozenset[str]:
+        """Which tunable parameters the named method actually consumes.
+
+        Mirrors the ``hasattr`` rule ``execute`` uses to inject them, so the UI
+        can disable controls that would otherwise be silently ignored.
+        """
+        method = self._methods.get(method_name)
+        if method is None:
+            return frozenset()
+        return frozenset(
+            field for field, attribute in TUNABLE_PARAMETERS.items() if hasattr(method, attribute)
+        )
 
     def execute(self, request: TransferLearningRequest) -> TransferLearningResult:
         if request.method_name not in self._methods:
@@ -76,9 +106,15 @@ class RunTransferLearningUseCase:
         target_features = apply_standardization(target_features, request.standardization)
 
         method = self._methods[request.method_name]
+        
+        for field, attribute in TUNABLE_PARAMETERS.items():
+            if hasattr(method, attribute):
+                setattr(method, attribute, getattr(request, field))
+
+
         transformed_source, transformed_target = method.run(
-            source_dataset.features,
-            target_dataset.features,
+            source_features,
+            target_features,
             source_labels=source_dataset.labels,
         )
 
@@ -93,9 +129,9 @@ class RunTransferLearningUseCase:
         prediction_correctness = None
 
         if source_dataset.labels is not None and target_dataset.labels is not None:
-            knn = KNeighborsClassifier(n_neighbors=5)
-            knn.fit(transformed_source, source_dataset.labels)
-            predictions = knn.predict(transformed_target)
+            clf = self._build_classifier(request.classifier)
+            clf.fit(transformed_source, source_dataset.labels)
+            predictions = clf.predict(transformed_target)
 
             target_predictions = predictions
             target_actuals = target_dataset.labels
@@ -109,19 +145,19 @@ class RunTransferLearningUseCase:
                 for p, a in zip(target_predictions, target_actuals)
             ]
 
-            print(f"Total samples size: {total_samples}")
-            print(f"Number of correct predictions: {correct_predictions}")
-            print(f"Number of wrong predictions: {wrong_predictions}\n")
+            # print(f"Total samples size: {total_samples}")
+            # print(f"Number of correct predictions: {correct_predictions}")
+            # print(f"Number of wrong predictions: {wrong_predictions}\n")
 
-            print("Target Label Predictions:")
-            for i, pred in enumerate(target_predictions):
-                sample_name = f"Sample {i+1}"
-                print(f"{sample_name} -> {pred}")
+            # print("Target Label Predictions:")
+            # for i, pred in enumerate(target_predictions):
+            #     sample_name = f"Sample {i+1}"
+            #     print(f"{sample_name} -> {pred}")
 
-            print("\nActual Target Labels:")
-            for i, actual in enumerate(target_actuals):
-                sample_name = f"Sample {i+1}"
-                print(f"{sample_name} -> {actual}")
+            # print("\nActual Target Labels:")
+            # for i, actual in enumerate(target_actuals):
+            #     sample_name = f"Sample {i+1}"
+            #     print(f"{sample_name} -> {actual}")
 
             accuracy = float(accuracy_score(target_dataset.labels, predictions))
             try:
@@ -154,3 +190,21 @@ class RunTransferLearningUseCase:
             target_actuals=target_actuals,
             prediction_correctness=prediction_correctness,
         )
+
+    # ------------------------------------------------------------------
+    # Classifier factory
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _build_classifier(name: str):
+        """Return a fitted-ready sklearn classifier for the given *name*."""
+        name = name.strip()
+        if name == "SVM":
+            return SVC(kernel="rbf", C=1.0, gamma="scale", probability=False)
+        if name == "Random Forest":
+            return RandomForestClassifier(n_estimators=100, random_state=42)
+        if name == "Logistic Regression":
+            return LogisticRegression(max_iter=1000, random_state=42)
+        if name == "Decision Tree":
+            return DecisionTreeClassifier(random_state=42)
+        # Default / "k-NN"
+        return KNeighborsClassifier(n_neighbors=5)
