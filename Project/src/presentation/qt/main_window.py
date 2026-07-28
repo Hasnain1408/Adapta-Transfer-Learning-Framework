@@ -122,6 +122,105 @@ class MetricCard(QFrame):
         self._value_label.style().polish(self._value_label)
 
 
+class PredictionsWindow(QMainWindow):
+    """Standalone fullscreen window that mirrors the predictions table."""
+
+    def __init__(self, result: TransferLearningResult, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Predictions — Full Screen")
+        self.setMinimumSize(800, 540)
+        self.setStyleSheet(STYLE_SHEET)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+
+        # ── Filter bar ──────────────────────────────────────────────────
+        self._incorrect_only = QCheckBox("Show incorrect predictions only")
+
+        close_btn = QPushButton("✕  Close")
+        close_btn.setObjectName("fullscreenCloseButton")
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.clicked.connect(self.close)
+
+        filter_row = QHBoxLayout()
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        filter_row.setSpacing(10)
+        filter_row.addWidget(self._incorrect_only)
+        filter_row.addStretch(1)
+        filter_row.addWidget(close_btn)
+
+        # ── Predictions table ────────────────────────────────────────────
+        self._table = QTableWidget()
+        self._table.setColumnCount(4)
+        self._table.setHorizontalHeaderLabels(["Sample", "Actual Label", "Predicted Label", "Result"])
+        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._table.setAlternatingRowColors(True)
+        self._table.setShowGrid(False)
+        self._table.setWordWrap(False)
+        self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(30)
+        self._table.horizontalHeader().setHighlightSections(False)
+        self._table.horizontalHeader().setStretchLastSection(True)
+
+        for col, alignment in enumerate(
+            [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter]
+        ):
+            item = self._table.horizontalHeaderItem(col)
+            if item:
+                item.setTextAlignment(alignment | Qt.AlignVCenter)
+
+        # ── Layout ───────────────────────────────────────────────────────
+        container = QWidget()
+        container.setObjectName("centralWidget")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(10)
+        layout.addLayout(filter_row)
+        layout.addWidget(self._table, 1)
+        self.setCentralWidget(container)
+
+        self._populate(result)
+        self._incorrect_only.toggled.connect(self._apply_filter)
+        self.showMaximized()
+
+    def _populate(self, result: TransferLearningResult) -> None:
+        self._result = result
+        preds = result.target_predictions
+        if preds is None:
+            return
+
+        correct_brush = QBrush(QColor(PALETTE["success"]))
+        wrong_brush = QBrush(QColor(PALETTE["danger"]))
+
+        self._table.setRowCount(len(preds))
+        for row in range(len(preds)):
+            is_correct = result.prediction_correctness[row] == "Right"
+            cells = [
+                f"Sample {row + 1}",
+                str(result.target_actuals[row]),
+                str(preds[row]),
+                "✓ Correct" if is_correct else "✗ Incorrect",
+            ]
+            for col, value in enumerate(cells):
+                item = QTableWidgetItem(value)
+                if col:
+                    item.setTextAlignment(Qt.AlignCenter)
+                if col == 3:
+                    item.setForeground(correct_brush if is_correct else wrong_brush)
+                self._table.setItem(row, col, item)
+
+        header = self._table.horizontalHeader()
+        for col in range(4):
+            header.setSectionResizeMode(col, QHeaderView.Stretch)
+
+    def _apply_filter(self) -> None:
+        result = self._result
+        if result is None or result.prediction_correctness is None:
+            return
+        incorrect_only = self._incorrect_only.isChecked()
+        for row, correctness in enumerate(result.prediction_correctness):
+            self._table.setRowHidden(row, incorrect_only and correctness == "Right")
+
+
 class MainWindow(QMainWindow):
     def __init__(self, use_case: RunTransferLearningUseCase) -> None:
         super().__init__()
@@ -220,6 +319,12 @@ class MainWindow(QMainWindow):
 
         self._incorrect_only_check = QCheckBox("Show incorrect predictions only")
         self._incorrect_only_check.setEnabled(False)
+
+        self._fullscreen_button = QPushButton("⛶  Full Screen")
+        self._fullscreen_button.setObjectName("fullscreenButton")
+        self._fullscreen_button.setCursor(Qt.PointingHandCursor)
+        self._fullscreen_button.setToolTip("Open predictions in a dedicated full-screen window")
+        self._fullscreen_button.setEnabled(False)
 
         self._predictions_table = self._build_table(
             ["Sample", "Actual Label", "Predicted Label", "Result"]
@@ -443,6 +548,7 @@ class MainWindow(QMainWindow):
         filter_row = QHBoxLayout()
         filter_row.addWidget(self._incorrect_only_check)
         filter_row.addStretch(1)
+        filter_row.addWidget(self._fullscreen_button)
         predictions_layout.addLayout(filter_row)
         predictions_layout.addWidget(self._predictions_table, 1)
 
@@ -503,6 +609,7 @@ class MainWindow(QMainWindow):
 
         self._method_combo.currentTextChanged.connect(self._sync_method_parameters)
         self._incorrect_only_check.toggled.connect(self._apply_prediction_filter)
+        self._fullscreen_button.clicked.connect(self._open_predictions_fullscreen)
 
     # ------------------------------------------------------------------
     # Configuration state
@@ -710,12 +817,14 @@ class MainWindow(QMainWindow):
         if result.target_predictions is None:
             table.setRowCount(0)
             self._incorrect_only_check.setEnabled(False)
+            self._fullscreen_button.setEnabled(False)
             self._results_tabs.setTabEnabled(0, False)
             self._results_tabs.setCurrentIndex(1)
             return
 
         self._results_tabs.setTabEnabled(0, True)
         self._incorrect_only_check.setEnabled(True)
+        self._fullscreen_button.setEnabled(True)
         self._results_tabs.setCurrentIndex(0)
 
         correct_brush = QBrush(QColor(PALETTE["success"]))
@@ -758,6 +867,26 @@ class MainWindow(QMainWindow):
             self._predictions_table.setRowHidden(
                 row, incorrect_only and correctness == "Right"
             )
+
+    def _open_predictions_fullscreen(self) -> None:
+        """Open (or raise) the standalone predictions window."""
+        if self._last_result is None or self._last_result.target_predictions is None:
+            return
+        # Keep a reference so the window is not immediately garbage-collected,
+        # and bring it to the front if it is already open.
+        win = getattr(self, "_predictions_window", None)
+        try:
+            if win is not None:
+                win.raise_()
+                win.activateWindow()
+                return
+        except RuntimeError:
+            # The user already closed the previous window (WA_DeleteOnClose).
+            pass
+        self._predictions_window = PredictionsWindow(self._last_result, parent=None)
+        self._predictions_window.destroyed.connect(
+            lambda: setattr(self, "_predictions_window", None)
+        )
 
     def _show_transformed_features(self, result: TransferLearningResult) -> None:
         matrix = result.transformed_target
