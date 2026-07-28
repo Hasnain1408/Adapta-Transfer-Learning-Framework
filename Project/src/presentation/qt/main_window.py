@@ -37,6 +37,7 @@ from PyQt5.QtWidgets import (
 
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
 from domain.models import EvaluationMetrics, TransferLearningRequest, TransferLearningResult
+from presentation.qt.charts_widget import AnalyticsChartsWidget
 from presentation.qt.style import PALETTE, STYLE_SHEET
 from presentation.qt.worker import TransferLearningWorker
 
@@ -256,6 +257,11 @@ class MainWindow(QMainWindow):
         for button in (self._browse_source_button, self._browse_target_button):
             button.setCursor(Qt.PointingHandCursor)
 
+        self._swap_button = QPushButton("⇅ Swap")
+        self._swap_button.setObjectName("swapButton")
+        self._swap_button.setToolTip("Swap Source and Target dataset paths (Ctrl+Shift+S)")
+        self._swap_button.setCursor(Qt.PointingHandCursor)
+
         self._method_combo = QComboBox()
         for name in self._use_case.method_names:
             self._method_combo.addItem(name, name)
@@ -380,21 +386,24 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         self._open_source_action = QAction("Open &Source Dataset…", self)
-        self._open_source_action.setShortcut(QKeySequence("Ctrl+O"))
+        self._open_source_action.setShortcut(QKeySequence("Ctrl+S"))
         self._open_target_action = QAction("Open &Target Dataset…", self)
-        self._open_target_action.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        self._open_target_action.setShortcut(QKeySequence("Ctrl+T"))
+        self._swap_datasets_action = QAction("S&wap Source / Target", self)
+        self._swap_datasets_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
         self._export_action = QAction("&Export Report…", self)
-        self._export_action.setShortcut(QKeySequence("Ctrl+E"))
+        self._export_action.setShortcut(QKeySequence("Ctrl+R"))
         self._export_action.setEnabled(False)
         self._quit_action = QAction("&Quit", self)
         self._quit_action.setShortcut(QKeySequence("Ctrl+Q"))
         self._run_action = QAction("&Run Experiment", self)
-        self._run_action.setShortcut(QKeySequence("F5"))
+        self._run_action.setShortcut(QKeySequence("Ctrl+E"))
         self._about_action = QAction("&About", self)
 
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self._open_source_action)
         file_menu.addAction(self._open_target_action)
+        file_menu.addAction(self._swap_datasets_action)
         file_menu.addSeparator()
         file_menu.addAction(self._export_action)
         file_menu.addSeparator()
@@ -437,9 +446,11 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._target_input, 1, 1)
         grid.addWidget(self._browse_target_button, 1, 2)
 
+        grid.addWidget(self._swap_button, 0, 3, 2, 1, Qt.AlignVCenter)
+
         hint = QLabel("Accepted formats: CSV, XLSX (last column is the label) and MATLAB .mat")
         hint.setObjectName("captionLabel")
-        grid.addWidget(hint, 2, 1, 1, 2)
+        grid.addWidget(hint, 2, 1, 1, 3)
 
         return group
 
@@ -565,7 +576,10 @@ class MainWindow(QMainWindow):
         summary_layout.addWidget(self._summary_table)
         summary_layout.addStretch(1)
 
+        self._charts_widget = AnalyticsChartsWidget()
+
         self._results_tabs.addTab(predictions_page, "Predictions")
+        self._results_tabs.addTab(self._charts_widget, "Visualizations")
         self._results_tabs.addTab(features_page, "Transformed Features")
         self._results_tabs.addTab(summary_page, "Dataset Summary")
         return self._results_tabs
@@ -597,11 +611,13 @@ class MainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         self._browse_source_button.clicked.connect(self._pick_source)
         self._browse_target_button.clicked.connect(self._pick_target)
+        self._swap_button.clicked.connect(self._swap_datasets)
         self._run_button.clicked.connect(self._run_transfer_learning)
         self._export_button.clicked.connect(self._export_pdf_report)
 
         self._open_source_action.triggered.connect(self._pick_source)
         self._open_target_action.triggered.connect(self._pick_target)
+        self._swap_datasets_action.triggered.connect(self._swap_datasets)
         self._export_action.triggered.connect(self._export_pdf_report)
         self._run_action.triggered.connect(self._run_transfer_learning)
         self._quit_action.triggered.connect(self.close)
@@ -653,6 +669,12 @@ class MainWindow(QMainWindow):
 
     def _pick_target(self) -> None:
         self._pick_file(self._target_input, "Select Target Dataset")
+
+    def _swap_datasets(self) -> None:
+        source_text = self._source_input.text()
+        target_text = self._target_input.text()
+        self._source_input.setText(target_text)
+        self._target_input.setText(source_text)
 
     def _pick_file(self, target_input: QLineEdit, title: str) -> None:
         start_dir = target_input.text().strip() or str(Path.cwd())
@@ -732,6 +754,7 @@ class MainWindow(QMainWindow):
         self._show_dataset_summary(result)
         self._show_predictions(result)
         self._show_transformed_features(result)
+        self._charts_widget.update_result(result)
 
         self._results_stack.setCurrentIndex(1)
         self._update_context_label()
@@ -1031,6 +1054,11 @@ class MainWindow(QMainWindow):
                 f"<td class='num'>{metrics.correct_predictions}</td>"
                 f"<td class='num'>{metrics.wrong_predictions}</td></tr></table>"
             )
+
+        chart_html = self._charts_widget.render_to_base64_html()
+        if chart_html:
+            parts.append("<h2>Visual Analytics</h2>")
+            parts.append(chart_html)
 
         if result.target_predictions is not None:
             parts.append("<h2>Target Predictions</h2><table width='100%'>")
