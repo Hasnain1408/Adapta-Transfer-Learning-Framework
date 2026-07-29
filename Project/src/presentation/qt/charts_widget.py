@@ -26,16 +26,23 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import confusion_matrix
 
 from domain.models import TransferLearningResult
-from presentation.qt.style import PALETTE
+from presentation.qt.style import DARK_PALETTE
 
 
 class AnalyticsChartsWidget(QWidget):
-    """Widget embedding Matplotlib charts for visual experiment analytics."""
+    """Widget embedding Matplotlib charts for visual experiment analytics.
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    Chart colours mirror the app's active theme (dark or light) so the
+    embedded Matplotlib figure reads as part of the dashboard instead of a
+    pasted-in box. Call :meth:`set_palette` after a theme switch.
+    """
+
+    def __init__(self, palette: dict[str, str] | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._palette = palette or DARK_PALETTE
         self._last_result: Optional[TransferLearningResult] = None
         self._build_ui()
+        self._apply_rcparams()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -64,18 +71,55 @@ class AnalyticsChartsWidget(QWidget):
         control_bar.addStretch(1)
 
         # ── Canvas & Toolbar ─────────────────────────────────────────────
-        self._figure = Figure(figsize=(9, 6), dpi=100, facecolor="#ffffff")
+        self._figure = Figure(figsize=(9, 6), dpi=100)
         self._canvas = FigureCanvas(self._figure)
-        self._canvas.setStyleSheet("background-color: #ffffff; border-radius: 6px;")
-
         self._toolbar = NavigationToolbar(self._canvas, self)
-        self._toolbar.setStyleSheet("background: transparent; border: none;")
 
         layout.addLayout(control_bar)
         layout.addWidget(self._canvas, 1)
         layout.addWidget(self._toolbar)
 
         self._show_placeholder()
+
+    def _apply_rcparams(self) -> None:
+        """Push the active palette into Matplotlib and the surrounding widgets."""
+        palette = self._palette
+        fig_bg = palette["surface"]
+        axes_bg = palette["surface_alt"]
+        text = palette["text_secondary"]
+        grid = palette["border"]
+
+        matplotlib.rcParams.update(
+            {
+                "figure.facecolor": fig_bg,
+                "savefig.facecolor": fig_bg,
+                "axes.facecolor": axes_bg,
+                "axes.edgecolor": grid,
+                "axes.labelcolor": text,
+                "text.color": text,
+                "xtick.color": text,
+                "ytick.color": text,
+                "grid.color": grid,
+                "legend.facecolor": axes_bg,
+                "legend.edgecolor": grid,
+                "legend.labelcolor": text,
+            }
+        )
+        self._figure.set_facecolor(fig_bg)
+        self._canvas.setStyleSheet(f"background-color: {fig_bg}; border-radius: 10px;")
+        self._toolbar.setStyleSheet(
+            f"background-color: {palette['surface_alt']}; border: 1px solid {palette['border']};"
+            " border-radius: 7px; padding: 2px;"
+        )
+
+    def set_palette(self, palette: dict[str, str]) -> None:
+        """Re-theme the embedded figure after a dark/light mode switch."""
+        self._palette = palette
+        self._apply_rcparams()
+        if self._last_result is not None:
+            self._render_charts()
+        else:
+            self._show_placeholder()
 
     def _show_placeholder(self) -> None:
         self._figure.clear()
@@ -88,7 +132,7 @@ class AnalyticsChartsWidget(QWidget):
             ha="center",
             va="center",
             fontsize=13,
-            color=PALETTE.get("text_muted", "#8a97a5"),
+            color=self._palette.get("text_muted", "#8a97a5"),
             transform=ax.transAxes,
         )
         self._canvas.draw()
@@ -160,9 +204,9 @@ class AnalyticsChartsWidget(QWidget):
             tgt_2d = np.column_stack([tgt[:, 0], np.zeros(tgt.shape[0])])
             xlabel, ylabel = "Component 1", ""
 
-        accent_col = PALETTE.get("accent", "#1e6fd9")
-        success_col = PALETTE.get("success", "#14804a")
-        danger_col = PALETTE.get("danger", "#b3261e")
+        accent_col = self._palette.get("accent", "#1e6fd9")
+        success_col = self._palette.get("success", "#14804a")
+        danger_col = self._palette.get("danger", "#b3261e")
 
         ax.scatter(
             src_2d[:, 0],
@@ -263,7 +307,12 @@ class AnalyticsChartsWidget(QWidget):
 
         names = ["Accuracy", "Precision", "Recall", "F1 Score"]
         values = [metrics.accuracy, metrics.precision, metrics.recall, metrics.f1_score]
-        colors = ["#1e6fd9", "#2bb068", "#f59e0b", "#8b5cf6"]
+        colors = [
+            self._palette["metric_teal"],
+            self._palette["metric_purple"],
+            self._palette["metric_amber"],
+            self._palette["metric_pink"],
+        ]
 
         bars = ax.bar(names, values, color=colors, width=0.55, edgecolor="none", alpha=0.85)
 
