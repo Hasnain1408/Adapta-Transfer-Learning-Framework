@@ -7,6 +7,8 @@ import sys
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
 
+from application.authentication_use_case import AuthenticationUseCase
+from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
 from infrastructure.data.csv_dataset_loader import CSVDatasetLoader
 from infrastructure.methods.tca_method import TCAMethod
@@ -14,10 +16,56 @@ from infrastructure.methods.jda_method import JDAMethod
 from infrastructure.methods.coral_method import CORALMethod
 from infrastructure.methods.bda_method import BDAMethod
 from infrastructure.methods.ocmtl_method import OCMTLMethod
+from infrastructure.persistence import (
+    Database,
+    DatabaseConfigError,
+    DatabaseUnavailable,
+    PostgresDatasetRepository,
+    PostgresEvaluationRepository,
+    PostgresExperimentRepository,
+    PostgresUserRepository,
+)
 from presentation.qt.main_window import MainWindow
 
 
-def build_window() -> MainWindow:
+def build_catalog(
+    dsn: str | None = None,
+) -> tuple[ExperimentCatalogUseCase | None, AuthenticationUseCase | None, Database | None, str | None]:
+    """Connect to PostgreSQL and wire up the catalogue and auth use cases.
+
+    Returns ``(catalog, auth, database, error_message)``. On any failure the
+    first three are ``None`` and the fourth explains why — the app then runs
+    without persistence (and without login, since there is nowhere to check
+    credentials against) rather than refusing to start, so a missing
+    ``DATABASE_URL`` or a Neon outage costs you the history/account features,
+    not the whole tool.
+    """
+    try:
+        database = Database(dsn)
+        # Opens the connection and applies the schema; both can fail, and
+        # both should fail here rather than on the user's first run.
+        database.connect()
+    except (DatabaseConfigError, DatabaseUnavailable) as exc:
+        return None, None, None, str(exc)
+    except Exception as exc:  # noqa: BLE001 - unexpected driver/network faults
+        return None, None, None, f"Unexpected database error: {exc}"
+
+    users = PostgresUserRepository(database)
+    catalog = ExperimentCatalogUseCase(
+        users=users,
+        datasets=PostgresDatasetRepository(database),
+        experiments=PostgresExperimentRepository(database),
+        evaluations=PostgresEvaluationRepository(database),
+    )
+    auth = AuthenticationUseCase(users)
+    return catalog, auth, database, None
+
+
+def build_window(
+    catalog: ExperimentCatalogUseCase | None = None,
+    auth: AuthenticationUseCase | None = None,
+    database_error: str | None = None,
+) -> MainWindow:
     loader = CSVDatasetLoader()
     methods = [
         TCAMethod(latent_dim=5, regularization=1.0),
@@ -27,7 +75,12 @@ def build_window() -> MainWindow:
         OCMTLMethod(latent_dim=2, max_iterations=20)
     ]
     use_case = RunTransferLearningUseCase(loader=loader, methods=methods)
-    return MainWindow(use_case)
+    return MainWindow(
+        use_case,
+        catalog=catalog,
+        auth=auth,
+        database_error=database_error,
+    )
 
 
 def main() -> int:
@@ -38,22 +91,48 @@ def main() -> int:
         action="store_true",
         help="Start UI in offscreen mode and auto-exit to verify startup.",
     )
+    parser.add_argument(
+        "--no-database",
+        action="store_true",
+        help="Skip the PostgreSQL connection and run without recording experiments.",
+    )
     args = parser.parse_args()
 
     if args.self_test:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-# /cofiguration code
+    # /cofiguration code
 
     app = QApplication(sys.argv)
-    window = build_window()
+
+    if args.no_database:
+        catalog, auth, database, error = None, None, None, "Started with --no-database."
+    else:
+        catalog, auth, database, error = build_catalog()
+        if error:
+            # Visible on the console; the window also reports it in the status
+            # bar and under Database ▸ Connection Info.
+            print(f"[database] {error}", file=sys.stderr)
+
+    if auth is None and not args.self_test:
+        print(
+            "[auth] No database connection — starting without sign-in; "
+            "experiments will not be recorded.",
+            file=sys.stderr,
+        )
+
+    window = build_window(catalog=catalog, auth=auth, database_error=error)
     window.show()
-    
+
  # cofiguration code
     if args.self_test:
         QTimer.singleShot(400, app.quit)
  #  /cofiguration code
 
-    return app.exec_()
+    try:
+        return app.exec_()
+    finally:
+        if database is not None:
+            database.close()
 
 
 if __name__ == "__main__":

@@ -15,7 +15,12 @@ class TCAMethod(TransferLearningMethod):
     def name(self) -> str:
         return "TCA"
 
-    def run(self, source_features: np.ndarray, target_features: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def run(
+        self,
+        source_features: np.ndarray,
+        target_features: np.ndarray,
+        source_labels: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         source_size = source_features.shape[0]
         target_size = target_features.shape[0]
         total_size = source_size + target_size

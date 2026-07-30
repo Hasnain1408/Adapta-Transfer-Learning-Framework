@@ -9,7 +9,7 @@ from .models import Dataset
 
 
 class DatasetLoader(Protocol):
-    def load(self, path: str) -> Dataset:
+    def load(self, path: str, is_source: bool = True) -> Dataset:
         ...
 
 
@@ -20,5 +20,11 @@ class TransferLearningMethod(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def run(self, source_features: np.ndarray, target_features: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def run(
+        self,
+        source_features: np.ndarray,
+        target_features: np.ndarray,
+        source_labels: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError
+
