@@ -140,7 +140,7 @@ class ExperimentCatalogUseCase:
         result: TransferLearningResult,
         user_id: int | None,
         supported_parameters: frozenset[str] | None = None,
-    ) -> ExperimentRecord:
+    ) -> ExperimentRecord | None:
         """Store a completed run: both datasets, the experiment, and its scores.
 
         *supported_parameters* comes from
@@ -148,6 +148,9 @@ class ExperimentCatalogUseCase:
         hyper-parameters are meaningful for the chosen algorithm; the rest are
         stored as NULL. Passing ``None`` records all three.
         """
+        if user_id is None:
+            return None
+
         source_record = self.register_dataset(request.source_path, result.source_dataset)
         target_record = self.register_dataset(request.target_path, result.target_dataset)
 
@@ -184,12 +187,15 @@ class ExperimentCatalogUseCase:
         user_id: int | None,
         error_message: str,
         supported_parameters: frozenset[str] | None = None,
-    ) -> ExperimentRecord:
+    ) -> ExperimentRecord | None:
         """Store a run that raised, so failed configurations are not lost.
 
         No datasets are catalogued: the failure may well have been the loader
         refusing the file, in which case there are no statistics to record.
         """
+        if user_id is None:
+            return None
+
         return self._experiments.add(
             self._build_record(
                 request,

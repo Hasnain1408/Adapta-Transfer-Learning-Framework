@@ -16,6 +16,10 @@ from infrastructure.methods.jda_method import JDAMethod
 from infrastructure.methods.coral_method import CORALMethod
 from infrastructure.methods.bda_method import BDAMethod
 from infrastructure.methods.ocmtl_method import OCMTLMethod
+from infrastructure.methods.dali_method import DALIMethod
+from infrastructure.methods.gfk_method import GFKMethod
+from infrastructure.methods.jgsa_method import JGSAMethod
+from infrastructure.methods.jcsl_method import JCSLMethod
 from infrastructure.persistence import (
     Database,
     DatabaseConfigError,
@@ -72,7 +76,11 @@ def build_window(
         JDAMethod(latent_dim=5, regularization=1.0, kernel_type="linear", iterations=10),
         CORALMethod(),
         BDAMethod(mode="W-BDA", mu=1.0, regularization=0.1, latent_dim=10, kernel_type="linear", iterations=10),
-        OCMTLMethod(latent_dim=2, max_iterations=20)
+        OCMTLMethod(latent_dim=2, max_iterations=20),
+        DALIMethod(latent_dim=10, regularization=1.0, beta=0.4, delta=0.2, epsilon=0.1, iterations=10),
+        GFKMethod(latent_dim=10),
+        JGSAMethod(latent_dim=10, regularization=1.0, beta=1.0, mu=1.0, iterations=10),
+        JCSLMethod(latent_dim=10, regularization=0.01, subspace_weight=0.5, iterations=200),
     ]
     use_case = RunTransferLearningUseCase(loader=loader, methods=methods)
     return MainWindow(
