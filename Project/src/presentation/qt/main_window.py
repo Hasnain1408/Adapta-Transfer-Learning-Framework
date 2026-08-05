@@ -10,6 +10,7 @@ from PyQt5.QtPrintSupport import QPrinter
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QAction,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -177,6 +178,7 @@ class PredictionsWindow(QMainWindow):
 
         # ── Filter bar ──────────────────────────────────────────────────
         self._incorrect_only = QCheckBox("Show incorrect predictions only")
+        self._correct_only = QCheckBox("Show correct predictions only")
 
         close_btn = QPushButton("✕  Close")
         close_btn.setObjectName("fullscreenCloseButton")
@@ -187,6 +189,7 @@ class PredictionsWindow(QMainWindow):
         filter_row.setContentsMargins(0, 0, 0, 0)
         filter_row.setSpacing(10)
         filter_row.addWidget(self._incorrect_only)
+        filter_row.addWidget(self._correct_only)
         filter_row.addStretch(1)
         filter_row.addWidget(close_btn)
 
@@ -222,7 +225,8 @@ class PredictionsWindow(QMainWindow):
         self.setCentralWidget(container)
 
         self._populate(result)
-        self._incorrect_only.toggled.connect(self._apply_filter)
+        self._incorrect_only.toggled.connect(self._on_filter_toggled)
+        self._correct_only.toggled.connect(self._on_filter_toggled)
         self.showMaximized()
 
     def _populate(self, result: TransferLearningResult) -> None:
@@ -255,13 +259,28 @@ class PredictionsWindow(QMainWindow):
         for col in range(4):
             header.setSectionResizeMode(col, QHeaderView.Stretch)
 
+    def _on_filter_toggled(self) -> None:
+        sender = self.sender()
+        if sender is None or not sender.isChecked():
+            self._apply_filter()
+            return
+        other = self._incorrect_only if sender is self._correct_only else self._correct_only
+        other.blockSignals(True)
+        other.setChecked(False)
+        other.blockSignals(False)
+        self._apply_filter()
+
     def _apply_filter(self) -> None:
         result = self._result
         if result is None or result.prediction_correctness is None:
             return
+        correct_only = self._correct_only.isChecked()
         incorrect_only = self._incorrect_only.isChecked()
         for row, correctness in enumerate(result.prediction_correctness):
-            self._table.setRowHidden(row, incorrect_only and correctness == "Right")
+            hide = (
+                incorrect_only and correctness == "Right"
+            ) or (correct_only and correctness == "Wrong")
+            self._table.setRowHidden(row, hide)
 
 
 class MainWindow(QMainWindow):
@@ -300,10 +319,10 @@ class MainWindow(QMainWindow):
         self._status_key = "neutral"
         self._history_tab_index = -1
 
-        self.setWindowTitle("Transfer Learning Studio")
+        self.setWindowTitle("Adapta: Transfer Learning Studio")
         self.setMinimumSize(1000, 720)
         self.resize(1180, 820)
-        self.setStyleSheet(build_style_sheet(self._palette))
+        self._apply_theme_stylesheet()
 
         self._build_widgets()
         self._build_menu()
@@ -436,6 +455,8 @@ class MainWindow(QMainWindow):
 
         self._incorrect_only_check = QCheckBox("Show incorrect predictions only")
         self._incorrect_only_check.setEnabled(False)
+        self._correct_only_check = QCheckBox("Show correct predictions only")
+        self._correct_only_check.setEnabled(False)
 
         self._fullscreen_button = QPushButton("⛶  Full Screen")
         self._fullscreen_button.setObjectName("fullscreenButton")
@@ -643,7 +664,7 @@ class MainWindow(QMainWindow):
         title_box = QVBoxLayout()
         title_box.setContentsMargins(0, 0, 0, 0)
         title_box.setSpacing(0)
-        title = QLabel("Transfer Learning Studio")
+        title = QLabel("Adapta: Transfer Learning Studio")
         title.setObjectName("appTitle")
         subtitle = QLabel("Domain adaptation experiment workbench")
         subtitle.setObjectName("appSubtitle")
@@ -849,6 +870,7 @@ class MainWindow(QMainWindow):
         predictions_layout.setSpacing(8)
         filter_row = QHBoxLayout()
         filter_row.addWidget(self._incorrect_only_check)
+        filter_row.addWidget(self._correct_only_check)
         filter_row.addStretch(1)
         filter_row.addWidget(self._fullscreen_button)
         predictions_layout.addLayout(filter_row)
@@ -940,7 +962,8 @@ class MainWindow(QMainWindow):
         self._preprocessing_action.triggered.connect(lambda: self._open_learning_materials(3))
 
         self._method_combo.currentTextChanged.connect(self._sync_method_parameters)
-        self._incorrect_only_check.toggled.connect(self._apply_prediction_filter)
+        self._incorrect_only_check.toggled.connect(self._on_prediction_filter_toggled)
+        self._correct_only_check.toggled.connect(self._on_prediction_filter_toggled)
         self._fullscreen_button.clicked.connect(self._open_predictions_fullscreen)
         self._theme_toggle_button.clicked.connect(self._toggle_theme)
 
@@ -1209,13 +1232,20 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Theming
     # ------------------------------------------------------------------
+    def _apply_theme_stylesheet(self) -> None:
+        stylesheet = build_style_sheet(self._palette)
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(stylesheet)
+        self.setStyleSheet(stylesheet)
+
     def _toggle_theme(self) -> None:
         self._theme = "light" if self._theme == "dark" else "dark"
         self._palette = LIGHT_PALETTE if self._theme == "light" else DARK_PALETTE
         self._apply_theme()
 
     def _apply_theme(self) -> None:
-        self.setStyleSheet(build_style_sheet(self._palette))
+        self._apply_theme_stylesheet()
         self._theme_toggle_button.setText("🌙  Dark" if self._theme == "light" else "☀  Light")
 
         color = self._palette[self._status_key]
@@ -1272,9 +1302,15 @@ class MainWindow(QMainWindow):
 
     def _pick_file(self, target_input: QLineEdit, title: str) -> None:
         start_dir = target_input.text().strip() or str(Path.cwd())
-        file_path, _ = QFileDialog.getOpenFileName(self, title, start_dir, DATASET_FILTER)
-        if file_path:
-            target_input.setText(file_path)
+        dialog = QFileDialog(self, title, start_dir, DATASET_FILTER)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        dialog.setFileMode(QFileDialog.ExistingFile)
+        dialog.setAcceptMode(QFileDialog.AcceptOpen)
+        dialog.setStyleSheet(build_style_sheet(self._palette))
+        if dialog.exec_() == QDialog.Accepted:
+            selected_files = dialog.selectedFiles()
+            if selected_files:
+                target_input.setText(selected_files[0])
 
     # ------------------------------------------------------------------
     # Batch mode
@@ -1286,9 +1322,14 @@ class MainWindow(QMainWindow):
 
     def _add_batch_files(self) -> None:
         start_dir = str(Path.cwd())
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select Dataset Files", start_dir, DATASET_FILTER
-        )
+        dialog = QFileDialog(self, "Select Dataset Files", start_dir, DATASET_FILTER)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        dialog.setFileMode(QFileDialog.ExistingFiles)
+        dialog.setAcceptMode(QFileDialog.AcceptOpen)
+        dialog.setStyleSheet(build_style_sheet(self._palette))
+        file_paths = []
+        if dialog.exec_() == QDialog.Accepted:
+            file_paths = dialog.selectedFiles()
         existing = {
             self._batch_files_list.item(i).text() for i in range(self._batch_files_list.count())
         }
@@ -1575,8 +1616,8 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         QMessageBox.about(
             self,
-            "About Transfer Learning Studio",
-            "<b>Transfer Learning Studio</b>"
+            "About Adapta: Transfer Learning Studio",
+            "<b>Adapta: Transfer Learning Studio</b>"
             "<p>Desktop workbench for domain adaptation experiments.</p>"
             "<p>Methods: "
             + ", ".join(self._use_case.method_names)
@@ -1644,6 +1685,7 @@ class MainWindow(QMainWindow):
         if result.target_predictions is None:
             table.setRowCount(0)
             self._incorrect_only_check.setEnabled(False)
+            self._correct_only_check.setEnabled(False)
             self._fullscreen_button.setEnabled(False)
             self._results_tabs.setTabEnabled(0, False)
             self._results_tabs.setCurrentIndex(1)
@@ -1651,6 +1693,7 @@ class MainWindow(QMainWindow):
 
         self._results_tabs.setTabEnabled(0, True)
         self._incorrect_only_check.setEnabled(True)
+        self._correct_only_check.setEnabled(True)
         self._fullscreen_button.setEnabled(True)
         self._results_tabs.setCurrentIndex(0)
 
@@ -1683,17 +1726,30 @@ class MainWindow(QMainWindow):
 
         self._apply_prediction_filter()
 
+    def _on_prediction_filter_toggled(self) -> None:
+        sender = self.sender()
+        if sender is None or not sender.isChecked():
+            self._apply_prediction_filter()
+            return
+        other = self._incorrect_only_check if sender is self._correct_only_check else self._correct_only_check
+        other.blockSignals(True)
+        other.setChecked(False)
+        other.blockSignals(False)
+        self._apply_prediction_filter()
+
     def _apply_prediction_filter(self) -> None:
-        """Hide correctly classified rows when the filter is active."""
+        """Hide rows according to the active filter."""
         result = self._last_result
         if result is None or result.prediction_correctness is None:
             return
 
+        correct_only = self._correct_only_check.isChecked()
         incorrect_only = self._incorrect_only_check.isChecked()
         for row, correctness in enumerate(result.prediction_correctness):
-            self._predictions_table.setRowHidden(
-                row, incorrect_only and correctness == "Right"
-            )
+            hide = (
+                incorrect_only and correctness == "Right"
+            ) or (correct_only and correctness == "Wrong")
+            self._predictions_table.setRowHidden(row, hide)
 
     def _open_predictions_fullscreen(self) -> None:
         """Open (or raise) the standalone predictions window."""
@@ -1761,14 +1817,23 @@ class MainWindow(QMainWindow):
         if result is None:
             return
 
-        file_path, _ = QFileDialog.getSaveFileName(
+        dialog = QFileDialog(
             self,
             "Export PDF Report",
             str(Path.cwd() / "Transfer_Learning_Report.pdf"),
             "PDF Files (*.pdf)",
         )
-        if not file_path:
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        dialog.setAcceptMode(QFileDialog.AcceptSave)
+        dialog.setDefaultSuffix("pdf")
+        dialog.setStyleSheet(build_style_sheet(self._palette))
+        if dialog.exec_() != QDialog.Accepted:
             return
+
+        selected_files = dialog.selectedFiles()
+        if not selected_files:
+            return
+        file_path = selected_files[0]
         if not file_path.lower().endswith(".pdf"):
             file_path += ".pdf"
 
