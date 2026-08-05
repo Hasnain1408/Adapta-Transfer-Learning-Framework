@@ -347,11 +347,6 @@ class MainWindow(QMainWindow):
         self._target_input.setReadOnly(True)
         self._target_input.setCursor(Qt.PointingHandCursor)
 
-        self._browse_source_button = QPushButton("Browse…")
-        self._browse_target_button = QPushButton("Browse…")
-        for button in (self._browse_source_button, self._browse_target_button):
-            button.setCursor(Qt.PointingHandCursor)
-
         self._swap_button = QPushButton("⇅ Swap")
         self._swap_button.setObjectName("swapButton")
         self._swap_button.setToolTip("Swap Source and Target dataset paths (Ctrl+Shift+S)")
@@ -423,6 +418,7 @@ class MainWindow(QMainWindow):
         self._run_button.setDefault(True)
 
         self._export_button = QPushButton("Export Report…")
+        self._export_button.setObjectName("runButton")
         self._export_button.setCursor(Qt.PointingHandCursor)
         self._export_button.setEnabled(False)
 
@@ -735,13 +731,11 @@ class MainWindow(QMainWindow):
 
         grid.addWidget(self._field_label("Source"), 0, 0)
         grid.addWidget(self._source_input, 0, 1)
-        grid.addWidget(self._browse_source_button, 0, 2)
 
         grid.addWidget(self._field_label("Target"), 1, 0)
         grid.addWidget(self._target_input, 1, 1)
-        grid.addWidget(self._browse_target_button, 1, 2)
 
-        grid.addWidget(self._swap_button, 0, 3, 2, 1, Qt.AlignVCenter)
+        grid.addWidget(self._swap_button, 0, 2, 2, 1, Qt.AlignVCenter)
         return widget
 
     def _build_batch_dataset_widget(self) -> QWidget:
@@ -935,8 +929,6 @@ class MainWindow(QMainWindow):
         return label
 
     def _connect_signals(self) -> None:
-        self._browse_source_button.clicked.connect(self._pick_source)
-        self._browse_target_button.clicked.connect(self._pick_target)
         self._source_input.clicked.connect(self._pick_source)
         self._target_input.clicked.connect(self._pick_target)
         self._swap_button.clicked.connect(self._swap_datasets)
