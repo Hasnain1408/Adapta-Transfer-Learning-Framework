@@ -65,6 +65,7 @@ code practice/static_metric_extractor/test/fprime/
 # Other files
 code
 Papers
-Proposal
 Project/Datasets
 Project/src/__pycache__
+
+# Don't need to track these files, 
