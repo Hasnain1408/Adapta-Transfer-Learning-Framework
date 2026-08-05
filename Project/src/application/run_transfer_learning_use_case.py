@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+from itertools import permutations
+
 from domain.interfaces import DatasetLoader, TransferLearningMethod
-from domain.models import TransferLearningRequest, TransferLearningResult, EvaluationMetrics
+from domain.models import (
+    BatchTransferLearningRequest,
+    BatchTransferLearningResult,
+    EvaluationMetrics,
+    PairTransferLearningResult,
+    TransferLearningRequest,
+    TransferLearningResult,
+)
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
@@ -190,6 +199,55 @@ class RunTransferLearningUseCase:
             target_actuals=target_actuals,
             prediction_correctness=prediction_correctness,
         )
+
+    def execute_batch(self, request: BatchTransferLearningRequest) -> BatchTransferLearningResult:
+        """Run the same configuration over every ordered (source, target) pair.
+
+        A single bad pair (unreadable file, incompatible shapes, ...) is
+        recorded as an error on that pair rather than aborting the whole
+        batch, so one broken file doesn't cost every other combination.
+        """
+        if len(request.file_paths) < 2:
+            raise ValueError("Batch mode requires at least two dataset files.")
+
+        pairs: list[PairTransferLearningResult] = []
+        for source_path, target_path in permutations(request.file_paths, 2):
+            pair_request = TransferLearningRequest(
+                method_name=request.method_name,
+                source_path=source_path,
+                target_path=target_path,
+                normalization=request.normalization,
+                standardization=request.standardization,
+                kernel_type=request.kernel_type,
+                regularization=request.regularization,
+                latent_dim=request.latent_dim,
+                classifier=request.classifier,
+            )
+            try:
+                result = self.execute(pair_request)
+                pairs.append(
+                    PairTransferLearningResult(source_path=source_path, target_path=target_path, result=result)
+                )
+            except Exception as exc:  # noqa: BLE001 - surfaced per-pair, not raised
+                pairs.append(
+                    PairTransferLearningResult(source_path=source_path, target_path=target_path, error=str(exc))
+                )
+
+        metric_sets = [pair.result.metrics for pair in pairs if pair.result is not None and pair.result.metrics is not None]
+        average_metrics = None
+        if metric_sets:
+            count = len(metric_sets)
+            average_metrics = EvaluationMetrics(
+                accuracy=sum(m.accuracy for m in metric_sets) / count,
+                precision=sum(m.precision for m in metric_sets) / count,
+                recall=sum(m.recall for m in metric_sets) / count,
+                f1_score=sum(m.f1_score for m in metric_sets) / count,
+                total_samples=sum(m.total_samples for m in metric_sets),
+                correct_predictions=sum(m.correct_predictions for m in metric_sets),
+                wrong_predictions=sum(m.wrong_predictions for m in metric_sets),
+            )
+
+        return BatchTransferLearningResult(pairs=pairs, average_metrics=average_metrics)
 
     # ------------------------------------------------------------------
     # Classifier factory

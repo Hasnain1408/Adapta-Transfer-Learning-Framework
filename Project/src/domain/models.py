@@ -46,3 +46,37 @@ class Dataset:
     labels: Optional[np.ndarray]
     feature_names: list[str]
     label_name: str
+
+
+@dataclass(frozen=True)
+class BatchTransferLearningRequest:
+    """Same configuration as ``TransferLearningRequest``, run over every
+
+    ordered (source, target) pair drawn from ``file_paths`` — i.e. for
+    ``[a, b, c]``: a->b, a->c, b->a, b->c, c->a, c->b.
+    """
+
+    method_name: str
+    file_paths: list[str]
+    normalization: str = "None"
+    standardization: str = "None"
+    kernel_type: str = "linear"
+    regularization: float = 1.0
+    latent_dim: int = 10
+    classifier: str = "k-NN"
+
+
+@dataclass(frozen=True)
+class PairTransferLearningResult:
+    """Outcome of one (source, target) pair within a batch run."""
+
+    source_path: str
+    target_path: str
+    result: Optional[TransferLearningResult] = None
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class BatchTransferLearningResult:
+    pairs: list[PairTransferLearningResult]
+    average_metrics: Optional[EvaluationMetrics] = None

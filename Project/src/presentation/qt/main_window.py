@@ -4,7 +4,7 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QKeySequence, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter
 from PyQt5.QtWidgets import (
@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QAction,
     QCheckBox,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
@@ -21,6 +22,7 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -35,11 +37,23 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from application.authentication_use_case import AuthenticationUseCase
+from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
-from domain.models import EvaluationMetrics, TransferLearningRequest, TransferLearningResult
+from domain.entities import ExperimentRecord, User, UserRole
+from domain.models import (
+    BatchTransferLearningRequest,
+    BatchTransferLearningResult,
+    EvaluationMetrics,
+    TransferLearningRequest,
+    TransferLearningResult,
+)
+from presentation.qt.auth_dialogs import AuthDialog
 from presentation.qt.charts_widget import AnalyticsChartsWidget
-from presentation.qt.style import PALETTE, STYLE_SHEET
-from presentation.qt.worker import TransferLearningWorker
+from presentation.qt.database_dialogs import DatasetRegistryDialog, UserManagerDialog
+from presentation.qt.history_tab import HistoryTab
+from presentation.qt.style import DARK_PALETTE, LIGHT_PALETTE, build_style_sheet
+from presentation.qt.worker import BatchTransferLearningWorker, TransferLearningWorker
 
 #: ``(display label, value)``. The value is what the use case dispatches on, so
 #: labels can be reworded without silently disabling a transform.
@@ -92,12 +106,33 @@ DATASET_FILTER = (
 FEATURE_PREVIEW_ROWS = 1000
 
 
-class MetricCard(QFrame):
-    """A single headline metric, shown as a titled value tile."""
+class _ClickableLineEdit(QLineEdit):
+    """Read-only line edit that emits ``clicked`` on any mouse press.
 
-    def __init__(self, title: str, tooltip: str = "") -> None:
+    Used for the dataset path fields so clicking anywhere in the field opens
+    the file browser dialog, not just the adjacent "Browse…" button.
+    """
+
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class MetricCard(QFrame):
+    """A single headline metric, shown as a titled value tile.
+
+    ``accent`` selects the colour of the card's top border (see the
+    ``QFrame#metricCard[accent=...]`` rules in ``style.py``) so the row of
+    stat cards reads as a set of distinct, colour-coded tiles rather than
+    identical grey boxes.
+    """
+
+    def __init__(self, title: str, tooltip: str = "", accent: str = "teal") -> None:
         super().__init__()
         self.setObjectName("metricCard")
+        self.setProperty("accent", accent)
         if tooltip:
             self.setToolTip(tooltip)
 
@@ -126,11 +161,18 @@ class MetricCard(QFrame):
 class PredictionsWindow(QMainWindow):
     """Standalone fullscreen window that mirrors the predictions table."""
 
-    def __init__(self, result: TransferLearningResult, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        result: TransferLearningResult,
+        palette: dict[str, str],
+        stylesheet: str,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._palette = palette
         self.setWindowTitle("Predictions — Full Screen")
         self.setMinimumSize(800, 540)
-        self.setStyleSheet(STYLE_SHEET)
+        self.setStyleSheet(stylesheet)
         self.setAttribute(Qt.WA_DeleteOnClose)
 
         # ── Filter bar ──────────────────────────────────────────────────
@@ -189,8 +231,8 @@ class PredictionsWindow(QMainWindow):
         if preds is None:
             return
 
-        correct_brush = QBrush(QColor(PALETTE["success"]))
-        wrong_brush = QBrush(QColor(PALETTE["danger"]))
+        correct_brush = QBrush(QColor(self._palette["success"]))
+        wrong_brush = QBrush(QColor(self._palette["danger"]))
 
         self._table.setRowCount(len(preds))
         for row in range(len(preds)):
@@ -223,16 +265,45 @@ class PredictionsWindow(QMainWindow):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, use_case: RunTransferLearningUseCase) -> None:
+    def __init__(
+        self,
+        use_case: RunTransferLearningUseCase,
+        catalog: ExperimentCatalogUseCase | None = None,
+        auth: AuthenticationUseCase | None = None,
+        current_user: User | None = None,
+        database_error: str | None = None,
+    ) -> None:
+        """*catalog* is ``None`` when the database could not be reached.
+
+        The app deliberately stays usable in that state — experiments still
+        run, they just are not recorded — so a Neon outage or a missing
+        ``DATABASE_URL`` degrades the feature rather than blocking start-up.
+        ``database_error`` carries the reason, shown once in the status bar.
+
+        *current_user* is the account currently signed in when the window is
+        created. It is usually ``None`` because sign-in is now optional and is
+        only prompted from the header button when the user asks for it.
+        """
         super().__init__()
         self._use_case = use_case
-        self._worker: TransferLearningWorker | None = None
+        self._catalog = catalog
+        self._auth = auth
+        self._database_error = database_error
+        self._current_user = current_user
+        self._worker: TransferLearningWorker | BatchTransferLearningWorker | None = None
         self._last_result: TransferLearningResult | None = None
+        self._last_request: TransferLearningRequest | None = None
+        self._last_batch_result: BatchTransferLearningResult | None = None
+        self._batch_results_tab_index = -1
+        self._theme = "dark"
+        self._palette = DARK_PALETTE
+        self._status_key = "neutral"
+        self._history_tab_index = -1
 
         self.setWindowTitle("Transfer Learning Studio")
         self.setMinimumSize(1000, 720)
         self.resize(1180, 820)
-        self.setStyleSheet(STYLE_SHEET)
+        self.setStyleSheet(build_style_sheet(self._palette))
 
         self._build_widgets()
         self._build_menu()
@@ -240,17 +311,22 @@ class MainWindow(QMainWindow):
         self._build_status_bar()
         self._connect_signals()
         self._sync_method_parameters()
+        self._update_auth_ui()
 
     # ------------------------------------------------------------------
     # Construction
     # ------------------------------------------------------------------
     def _build_widgets(self) -> None:
-        self._source_input = QLineEdit()
+        self._source_input = _ClickableLineEdit()
         self._source_input.setPlaceholderText("No source dataset selected")
         self._source_input.setClearButtonEnabled(True)
-        self._target_input = QLineEdit()
+        self._source_input.setReadOnly(True)
+        self._source_input.setCursor(Qt.PointingHandCursor)
+        self._target_input = _ClickableLineEdit()
         self._target_input.setPlaceholderText("No target dataset selected")
         self._target_input.setClearButtonEnabled(True)
+        self._target_input.setReadOnly(True)
+        self._target_input.setCursor(Qt.PointingHandCursor)
 
         self._browse_source_button = QPushButton("Browse…")
         self._browse_target_button = QPushButton("Browse…")
@@ -261,6 +337,30 @@ class MainWindow(QMainWindow):
         self._swap_button.setObjectName("swapButton")
         self._swap_button.setToolTip("Swap Source and Target dataset paths (Ctrl+Shift+S)")
         self._swap_button.setCursor(Qt.PointingHandCursor)
+
+        self._batch_mode_check = QCheckBox("Batch mode — run every ordered pair from multiple files")
+        self._batch_mode_check.setToolTip(
+            "Pick 2+ files; every ordered pair (A→B, A→C, B→A, ...) is run with "
+            "the same method and configuration."
+        )
+
+        self._batch_files_list = QListWidget()
+        self._batch_files_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self._batch_files_list.setToolTip("Files included in the batch")
+        self._batch_files_list.setMaximumHeight(110)
+
+        self._add_batch_files_button = QPushButton("Add Files…")
+        self._remove_batch_file_button = QPushButton("Remove Selected")
+        self._clear_batch_files_button = QPushButton("Clear All")
+        for button in (
+            self._add_batch_files_button,
+            self._remove_batch_file_button,
+            self._clear_batch_files_button,
+        ):
+            button.setCursor(Qt.PointingHandCursor)
+
+        self._batch_files_caption = QLabel("Add 2+ files to enable batch mode.")
+        self._batch_files_caption.setObjectName("captionLabel")
 
         self._method_combo = QComboBox()
         for name in self._use_case.method_names:
@@ -295,9 +395,7 @@ class MainWindow(QMainWindow):
         self._dim_input.setValue(10)
         self._dim_input.setToolTip("Number of latent components to project onto")
 
-        # Numeric fields read better at their natural size than stretched wide.
         for spin_box in (self._reg_input, self._dim_input):
-            spin_box.setMaximumWidth(170)
             spin_box.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self._run_button = QPushButton("Run Experiment")
@@ -309,10 +407,23 @@ class MainWindow(QMainWindow):
         self._export_button.setCursor(Qt.PointingHandCursor)
         self._export_button.setEnabled(False)
 
-        self._accuracy_card = MetricCard("Accuracy", "Share of target samples predicted correctly")
-        self._precision_card = MetricCard("Precision", "True positives over predicted positives")
-        self._recall_card = MetricCard("Recall", "True positives over actual positives")
-        self._f1_card = MetricCard("F1 Score", "Harmonic mean of precision and recall")
+        self._theme_toggle_button = QPushButton("☀  Light")
+        self._theme_toggle_button.setObjectName("themeToggleButton")
+        self._theme_toggle_button.setCursor(Qt.PointingHandCursor)
+        self._theme_toggle_button.setToolTip("Switch between dark and light mode")
+
+        self._accuracy_card = MetricCard(
+            "Accuracy", "Share of target samples predicted correctly", accent="teal"
+        )
+        self._precision_card = MetricCard(
+            "Precision", "True positives over predicted positives", accent="purple"
+        )
+        self._recall_card = MetricCard(
+            "Recall", "True positives over actual positives", accent="amber"
+        )
+        self._f1_card = MetricCard(
+            "F1 Score", "Harmonic mean of precision and recall", accent="pink"
+        )
         self._metric_cards = (
             self._accuracy_card,
             self._precision_card,
@@ -352,6 +463,53 @@ class MainWindow(QMainWindow):
         self._features_caption = QLabel()
         self._features_caption.setObjectName("captionLabel")
         self._features_caption.hide()
+
+        self._batch_results_table = self._build_table(
+            [
+                "Source",
+                "Target",
+                "Status",
+                "Accuracy",
+                "Precision",
+                "Recall",
+                "F1 Score",
+                "Samples",
+                "Correct",
+                "Wrong",
+            ]
+        )
+        self._align_headers(
+            self._batch_results_table,
+            [
+                Qt.AlignLeft,
+                Qt.AlignLeft,
+                Qt.AlignCenter,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+            ],
+        )
+        self._batch_summary_label = QLabel(
+            "Run a batch to see per-pair results and the average across the batch."
+        )
+        self._batch_summary_label.setObjectName("captionLabel")
+        self._batch_summary_label.setWordWrap(True)
+
+        # Owner of any experiment recorded from now on — the account that
+        # authenticated through AuthDialog before this window was built.
+        self._user_label = QLabel()
+        self._user_label.setObjectName("captionLabel")
+        self._update_user_label()
+
+        self._logout_button = QPushButton("Log Out")
+        self._logout_button.setObjectName("linkButton")
+        self._logout_button.setCursor(Qt.PointingHandCursor)
+        self._logout_button.setToolTip("Log in to record and review experiments")
+        self._logout_button.setEnabled(True)
 
     def _build_option_combo(self, options: list[tuple[str, str]], tooltip: str) -> QComboBox:
         combo = QComboBox()
@@ -400,6 +558,28 @@ class MainWindow(QMainWindow):
         self._run_action.setShortcut(QKeySequence("Ctrl+E"))
         self._about_action = QAction("&About", self)
 
+        self._learning_materials_action = QAction("&Learning Materials…", self)
+        self._learning_materials_action.setShortcut(QKeySequence("Ctrl+L"))
+        self._tl_methods_action = QAction("Transfer Learning &Methods…", self)
+        self._classifiers_action = QAction("&Classifiers…", self)
+        self._metrics_action = QAction("Evaluation &Metrics…", self)
+        self._preprocessing_action = QAction("&Normalization & Scaling…", self)
+
+        # Database actions stay disabled without a connection rather than
+        # opening a dialog that can only show an error.
+        has_database = self._catalog is not None
+        is_admin = self._current_user is not None and self._current_user.role == UserRole.ADMIN
+        self._manage_users_action = QAction("Manage &Users…", self)
+        self._manage_users_action.setShortcut(QKeySequence("Ctrl+U"))
+        self._manage_users_action.setEnabled(has_database and is_admin)
+        self._dataset_registry_action = QAction("&Dataset Registry…", self)
+        self._dataset_registry_action.setShortcut(QKeySequence("Ctrl+D"))
+        self._dataset_registry_action.setEnabled(has_database)
+        self._refresh_history_action = QAction("Refresh &History", self)
+        self._refresh_history_action.setShortcut(QKeySequence("F5"))
+        self._refresh_history_action.setEnabled(has_database)
+        self._database_info_action = QAction("Connection &Info", self)
+
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self._open_source_action)
         file_menu.addAction(self._open_target_action)
@@ -412,7 +592,24 @@ class MainWindow(QMainWindow):
         run_menu = self.menuBar().addMenu("&Run")
         run_menu.addAction(self._run_action)
 
+        database_menu = self.menuBar().addMenu("&Database")
+        database_menu.addAction(self._manage_users_action)
+        database_menu.addAction(self._dataset_registry_action)
+        database_menu.addSeparator()
+        database_menu.addAction(self._refresh_history_action)
+        database_menu.addAction(self._database_info_action)
+
+        learning_menu = self.menuBar().addMenu("&Learning Materials")
+        learning_menu.addAction(self._learning_materials_action)
+        learning_menu.addSeparator()
+        learning_menu.addAction(self._tl_methods_action)
+        learning_menu.addAction(self._classifiers_action)
+        learning_menu.addAction(self._metrics_action)
+        learning_menu.addAction(self._preprocessing_action)
+
         help_menu = self.menuBar().addMenu("&Help")
+        help_menu.addAction(self._learning_materials_action)
+        help_menu.addSeparator()
         help_menu.addAction(self._about_action)
 
     def _build_layout(self) -> None:
@@ -422,18 +619,95 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(18, 14, 18, 10)
         root.setSpacing(11)
 
-        root.addWidget(self._build_dataset_group())
-        root.addWidget(self._build_parameter_group())
-        root.addLayout(self._build_action_row())
-        root.addLayout(self._build_metrics_row())
-        root.addWidget(self._counts_label)
-        root.addWidget(self._build_results_stack(), 1)
+        root.addWidget(self._build_header())
+
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        body.addWidget(self._build_sidebar())
+        body.addWidget(self._build_content(), 1)
+        root.addLayout(body, 1)
 
         self.setCentralWidget(central)
 
+    def _build_header(self) -> QWidget:
+        """Small branded header: an accent mark, a title/subtitle pair, and the theme toggle."""
+        header = QWidget()
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(2, 0, 2, 2)
+        layout.setSpacing(12)
+
+        mark = QLabel()
+        mark.setObjectName("brandMark")
+        mark.setFixedSize(34, 34)
+
+        title_box = QVBoxLayout()
+        title_box.setContentsMargins(0, 0, 0, 0)
+        title_box.setSpacing(0)
+        title = QLabel("Transfer Learning Studio")
+        title.setObjectName("appTitle")
+        subtitle = QLabel("Domain adaptation experiment workbench")
+        subtitle.setObjectName("appSubtitle")
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+
+        layout.addWidget(mark)
+        layout.addLayout(title_box)
+        layout.addStretch(1)
+        layout.addWidget(self._user_label)
+        layout.addWidget(self._logout_button)
+        layout.addWidget(self._theme_toggle_button)
+        return header
+
+    def _build_sidebar(self) -> QWidget:
+        """Left-hand column: method/parameters and run actions."""
+        sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(320)
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+
+        layout.addWidget(self._build_parameter_group())
+        layout.addLayout(self._build_action_row())
+        layout.addStretch(1)
+        return sidebar
+
+    def _build_content(self) -> QWidget:
+        """Right-hand column: datasets on top, metric cards below, then results."""
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(11)
+
+        layout.addWidget(self._build_dataset_group())
+        layout.addLayout(self._build_metrics_row())
+        layout.addWidget(self._counts_label)
+        layout.addWidget(self._build_results_stack(), 1)
+        return content
+
     def _build_dataset_group(self) -> QGroupBox:
         group = QGroupBox("Datasets")
-        grid = QGridLayout(group)
+        outer = QVBoxLayout(group)
+        outer.setSpacing(10)
+
+        outer.addWidget(self._batch_mode_check)
+
+        self._single_dataset_widget = self._build_single_dataset_widget()
+        self._batch_dataset_widget = self._build_batch_dataset_widget()
+        outer.addWidget(self._single_dataset_widget)
+        outer.addWidget(self._batch_dataset_widget)
+        self._batch_dataset_widget.setVisible(False)
+
+        hint = QLabel("Accepted formats: CSV, XLSX (last column is the label) and MATLAB .mat")
+        hint.setObjectName("captionLabel")
+        outer.addWidget(hint)
+
+        return group
+
+    def _build_single_dataset_widget(self) -> QWidget:
+        widget = QWidget()
+        grid = QGridLayout(widget)
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(10)
         grid.setColumnStretch(1, 1)
@@ -447,50 +721,52 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._browse_target_button, 1, 2)
 
         grid.addWidget(self._swap_button, 0, 3, 2, 1, Qt.AlignVCenter)
+        return widget
 
-        hint = QLabel("Accepted formats: CSV, XLSX (last column is the label) and MATLAB .mat")
-        hint.setObjectName("captionLabel")
-        grid.addWidget(hint, 2, 1, 1, 3)
+    def _build_batch_dataset_widget(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
-        return group
+        button_row = QHBoxLayout()
+        button_row.addWidget(self._add_batch_files_button)
+        button_row.addWidget(self._remove_batch_file_button)
+        button_row.addWidget(self._clear_batch_files_button)
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+
+        layout.addWidget(self._batch_files_list)
+        layout.addWidget(self._batch_files_caption)
+        return widget
 
     def _build_parameter_group(self) -> QGroupBox:
         group = QGroupBox("Method and Parameters")
-        grid = QGridLayout(group)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(10)
-        # Columns: 0 label | 1 field | 2 gutter | 3 label | 4 field.
-        # Only the two field columns stretch, so both halves stay equal width.
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(4, 1)
-        grid.setColumnMinimumWidth(2, 28)
+        layout = QVBoxLayout(group)
+        layout.setSpacing(8)
 
-        # (label, widget, row, column-pair) laid out as a two-column form so the
-        # six controls stay aligned instead of drifting in nested box layouts.
+        # Single-column form: a field label above its control, stacked in the
+        # order they matter most — the method choice first, tunables last.
         self._method_label = self._field_label("Method")
-        self._kernel_label = self._field_label("Kernel")
         self._classifier_label = self._field_label("Classifier")
+        self._kernel_label = self._field_label("Kernel")
         self._norm_label = self._field_label("Normalization")
         self._std_label = self._field_label("Standardization")
         self._reg_label = self._field_label("Regularization (λ)")
         self._dim_label = self._field_label("Latent Dimensions")
 
         rows = [
-            (self._method_label, self._method_combo, self._classifier_label, self._classifier_combo),
-            (self._kernel_label, self._kernel_combo, self._norm_label, self._norm_combo),
-            (self._std_label, self._std_combo, self._reg_label, self._reg_input),
-            (self._dim_label, self._dim_input, None, None),
+            (self._method_label, self._method_combo),
+            (self._classifier_label, self._classifier_combo),
+            (self._kernel_label, self._kernel_combo),
+            (self._norm_label, self._norm_combo),
+            (self._std_label, self._std_combo),
+            (self._reg_label, self._reg_input),
+            (self._dim_label, self._dim_input),
         ]
-        for row, (left_label, left_widget, right_label, right_widget) in enumerate(rows):
-            grid.addWidget(left_label, row, 0)
-            grid.addWidget(left_widget, row, 1)
-            if right_label is not None:
-                grid.addWidget(right_label, row, 3)
-            if right_widget is not None:
-                grid.addWidget(right_widget, row, 4)
-
-        grid.setColumnMinimumWidth(0, 130)
-        grid.setColumnMinimumWidth(3, 130)
+        for label, widget in rows:
+            layout.addWidget(label)
+            layout.addWidget(widget)
 
         # Captured before any method may disable them, so the explanatory
         # tooltips can be restored when a method that uses them is selected.
@@ -504,12 +780,11 @@ class MainWindow(QMainWindow):
         }
         return group
 
-    def _build_action_row(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.setSpacing(10)
+    def _build_action_row(self) -> QVBoxLayout:
+        row = QVBoxLayout()
+        row.setSpacing(8)
         row.addWidget(self._run_button)
         row.addWidget(self._export_button)
-        row.addStretch(1)
         return row
 
     def _build_metrics_row(self) -> QHBoxLayout:
@@ -545,6 +820,22 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
         layout.addWidget(title)
         layout.addWidget(body)
+
+        # The results tabs — History among them — are the *other* page of the
+        # stack, so on a fresh launch past experiments would be unreachable
+        # until a run finished. This is the way in.
+        if self._catalog is not None:
+            self._browse_history_button = QPushButton("Browse Past Experiments")
+            self._browse_history_button.setCursor(Qt.PointingHandCursor)
+            self._browse_history_button.clicked.connect(self._show_history)
+
+            button_row = QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(self._browse_history_button)
+            button_row.addStretch(1)
+            layout.addSpacing(10)
+            layout.addLayout(button_row)
+
         layout.addStretch(1)
         return page
 
@@ -576,12 +867,25 @@ class MainWindow(QMainWindow):
         summary_layout.addWidget(self._summary_table)
         summary_layout.addStretch(1)
 
-        self._charts_widget = AnalyticsChartsWidget()
+        batch_page = QWidget()
+        batch_layout = QVBoxLayout(batch_page)
+        batch_layout.setContentsMargins(12, 10, 12, 12)
+        batch_layout.setSpacing(8)
+        batch_layout.addWidget(self._batch_summary_label)
+        batch_layout.addWidget(self._batch_results_table, 1)
+
+        self._charts_widget = AnalyticsChartsWidget(self._palette)
+        self._history_tab = HistoryTab(self._catalog, self._palette)
 
         self._results_tabs.addTab(predictions_page, "Predictions")
         self._results_tabs.addTab(self._charts_widget, "Visualizations")
         self._results_tabs.addTab(features_page, "Transformed Features")
         self._results_tabs.addTab(summary_page, "Dataset Summary")
+        self._results_tabs.addTab(batch_page, "Batch Results")
+        self._results_tabs.addTab(self._history_tab, "History")
+        self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
+        self._history_tab_index = self._results_tabs.indexOf(self._history_tab)
+        self._set_history_visible(self._current_user is not None)
         return self._results_tabs
 
     def _build_status_bar(self) -> None:
@@ -601,7 +905,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(self._status_label)
         bar.addWidget(self._progress_bar)
         bar.addPermanentWidget(self._context_label)
-        self._set_status("Ready", PALETTE["neutral"])
+        self._set_status("Ready", "neutral")
 
     def _field_label(self, text: str) -> QLabel:
         label = QLabel(text)
@@ -611,7 +915,13 @@ class MainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         self._browse_source_button.clicked.connect(self._pick_source)
         self._browse_target_button.clicked.connect(self._pick_target)
+        self._source_input.clicked.connect(self._pick_source)
+        self._target_input.clicked.connect(self._pick_target)
         self._swap_button.clicked.connect(self._swap_datasets)
+        self._batch_mode_check.toggled.connect(self._on_batch_mode_toggled)
+        self._add_batch_files_button.clicked.connect(self._add_batch_files)
+        self._remove_batch_file_button.clicked.connect(self._remove_selected_batch_files)
+        self._clear_batch_files_button.clicked.connect(self._clear_batch_files)
         self._run_button.clicked.connect(self._run_transfer_learning)
         self._export_button.clicked.connect(self._export_pdf_report)
 
@@ -623,9 +933,23 @@ class MainWindow(QMainWindow):
         self._quit_action.triggered.connect(self.close)
         self._about_action.triggered.connect(self._show_about)
 
+        self._learning_materials_action.triggered.connect(lambda: self._open_learning_materials(0))
+        self._tl_methods_action.triggered.connect(lambda: self._open_learning_materials(0))
+        self._classifiers_action.triggered.connect(lambda: self._open_learning_materials(1))
+        self._metrics_action.triggered.connect(lambda: self._open_learning_materials(2))
+        self._preprocessing_action.triggered.connect(lambda: self._open_learning_materials(3))
+
         self._method_combo.currentTextChanged.connect(self._sync_method_parameters)
         self._incorrect_only_check.toggled.connect(self._apply_prediction_filter)
         self._fullscreen_button.clicked.connect(self._open_predictions_fullscreen)
+        self._theme_toggle_button.clicked.connect(self._toggle_theme)
+
+        self._logout_button.clicked.connect(self._handle_auth_button_clicked)
+        self._manage_users_action.triggered.connect(self._open_user_manager)
+        self._dataset_registry_action.triggered.connect(self._open_dataset_registry)
+        self._refresh_history_action.triggered.connect(self._show_history)
+        self._database_info_action.triggered.connect(self._show_database_info)
+        self._history_tab.configuration_requested.connect(self._apply_configuration)
 
     # ------------------------------------------------------------------
     # Configuration state
@@ -654,12 +978,282 @@ class MainWindow(QMainWindow):
             parts.append(f"{self._kernel_combo.currentText()} kernel")
         if self._last_result is not None:
             parts.append(f"{self._last_result.target_dataset.features.shape[0]} target samples")
+        if self._current_user is not None:
+            parts.append(self._current_user.name)
         self._context_label.setText("  ·  ".join(parts))
 
-    def _set_status(self, text: str, color: str) -> None:
+    def _set_status(self, text: str, color_key: str) -> None:
+        """Show a status message. ``color_key`` names a semantic palette entry
+        (e.g. "success", "warning") rather than a literal colour, so a theme
+        switch can recolour the currently displayed status."""
+        self._status_key = color_key
+        color = self._palette[color_key]
         self._status_dot.setStyleSheet(f"color: {color};")
         self._status_label.setText(text)
         self._status_label.setStyleSheet(f"color: {color}; font-weight: 600;")
+
+    # ------------------------------------------------------------------
+    # Database
+    # ------------------------------------------------------------------
+    def _update_user_label(self) -> None:
+        if self._current_user is not None:
+            self._user_label.setText(f"Signed in as {self._current_user.display_name}")
+        elif self._catalog is None:
+            self._user_label.setText("No database — experiments are not recorded")
+        else:
+            self._user_label.setText("Signed out")
+
+    def _update_auth_ui(self) -> None:
+        signed_in = self._current_user is not None
+        can_authenticate = self._auth is not None
+
+        if signed_in:
+            self._logout_button.setText("Log Out")
+            self._logout_button.setToolTip("Sign out and hide experiment history")
+        else:
+            self._logout_button.setText("Log In")
+            self._logout_button.setToolTip("Log in to record and review experiments")
+
+        self._logout_button.setEnabled(can_authenticate)
+        self._manage_users_action.setEnabled(
+            self._catalog is not None and signed_in and self._current_user is not None and self._current_user.role == UserRole.ADMIN
+        )
+        self._refresh_history_action.setEnabled(self._catalog is not None and signed_in)
+        if hasattr(self, "_browse_history_button"):
+            self._browse_history_button.setVisible(self._catalog is not None and signed_in)
+
+        self._history_tab.set_current_user(self._current_user)
+        self._set_history_visible(signed_in)
+
+    def _set_history_visible(self, visible: bool) -> None:
+        if not hasattr(self, "_results_tabs"):
+            return
+
+        index = self._results_tabs.indexOf(self._history_tab)
+        if visible:
+            if index < 0:
+                insert_at = min(self._history_tab_index, self._results_tabs.count())
+                self._results_tabs.insertTab(insert_at, self._history_tab, "History")
+        elif index >= 0:
+            if self._results_tabs.currentIndex() == index:
+                self._results_tabs.setCurrentIndex(0)
+            self._results_tabs.removeTab(index)
+
+    def _handle_auth_button_clicked(self) -> None:
+        if self._current_user is None:
+            self._show_login_dialog()
+        else:
+            self._sign_out()
+
+    def _show_login_dialog(self) -> None:
+        if self._auth is None:
+            QMessageBox.information(
+                self,
+                "Log In Unavailable",
+                "Sign-in is only available when the database connection is active.",
+            )
+            return
+
+        dialog = AuthDialog(self._auth, build_style_sheet(self._palette), parent=self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        self._current_user = dialog.authenticated_user()
+        self._update_user_label()
+        self._update_context_label()
+        self._update_auth_ui()
+        if self._current_user is not None:
+            self._set_status(f"Signed in as {self._current_user.display_name}", "success")
+
+    def _sign_out(self) -> None:
+        self._current_user = None
+        self._update_user_label()
+        self._update_context_label()
+        self._update_auth_ui()
+        self._set_status("You have been logged out.", "neutral")
+        QMessageBox.information(
+            self,
+            "Logged Out",
+            "You have been logged out. You can keep running experiments, but history stays hidden until you log in again.",
+        )
+
+    def _current_user_id(self) -> int | None:
+        return self._current_user.id if self._current_user else None
+
+    def _record_run(
+        self, result: TransferLearningResult | None, error_message: str | None
+    ) -> None:
+        """Persist the run that just finished.
+
+        Unauthenticated runs (without log in) are NOT recorded into the database.
+        """
+        if (
+            self._catalog is None
+            or self._last_request is None
+            or self._current_user is None
+            or self._current_user.id is None
+        ):
+            return
+
+        request = self._last_request
+        supported = self._use_case.supported_parameters(request.method_name)
+
+        try:
+            if error_message is None and result is not None:
+                self._catalog.record_success(
+                    request, result, self._current_user_id(), supported
+                )
+            else:
+                self._catalog.record_failure(
+                    request, self._current_user_id(), error_message or "Unknown error", supported
+                )
+        except Exception as exc:  # noqa: BLE001
+            self._set_status(f"Run not recorded: {exc}", "warning")
+            return
+
+        self._history_tab.refresh()
+
+    def _show_history(self) -> None:
+        """Bring the History tab to the front and reload user-specific history."""
+        if self._catalog is None or self._current_user is None:
+            return
+        self._history_tab.set_current_user(self._current_user)
+        self._set_history_visible(True)
+        self._results_stack.setCurrentIndex(1)
+        index = self._results_tabs.indexOf(self._history_tab)
+        if index >= 0:
+            self._results_tabs.setCurrentIndex(index)
+
+    def _open_user_manager(self) -> None:
+        if self._catalog is None:
+            return
+        dialog = UserManagerDialog(self._catalog, build_style_sheet(self._palette), self)
+        dialog.exec_()
+        # Names and roles may have changed, including the signed-in user's own.
+        if self._current_user is not None and self._current_user.id is not None:
+            refreshed = self._catalog.get_user(self._current_user.id)
+            if refreshed is not None:
+                self._current_user = refreshed
+                self._update_user_label()
+        self._history_tab.refresh()
+
+    def _open_dataset_registry(self) -> None:
+        if self._catalog is None:
+            return
+        dialog = DatasetRegistryDialog(
+            self._catalog, build_style_sheet(self._palette), self
+        )
+        dialog.exec_()
+
+    def _show_database_info(self) -> None:
+        if self._catalog is None:
+            QMessageBox.warning(
+                self,
+                "Database Unavailable",
+                "No PostgreSQL connection.\n\n"
+                + (self._database_error or "No connection details were configured."),
+            )
+            return
+
+        try:
+            stats = self._catalog.statistics()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Database Error", str(exc))
+            return
+
+        QMessageBox.information(
+            self,
+            "Database Connection",
+            "<b>PostgreSQL connected</b>"
+            "<p>Stored records:</p>"
+            f"<ul><li>Users: {stats['users']}</li>"
+            f"<li>Datasets: {stats['datasets']}</li>"
+            f"<li>Experiments: {stats['experiments']}</li>"
+            f"<li>Evaluations: {stats['evaluations']}</li></ul>",
+        )
+
+    def _apply_configuration(self, experiment: ExperimentRecord) -> None:
+        """Copy a stored experiment's settings back into the run form.
+
+        Only the settings — not the dataset paths, which may since have moved
+        or been deleted. Selections are applied by ``findData``/``findText`` so
+        a value the current build no longer offers is skipped rather than
+        silently landing on the wrong entry.
+        """
+        method_index = self._method_combo.findText(experiment.tl_algorithm)
+        if method_index >= 0:
+            self._method_combo.setCurrentIndex(method_index)
+
+        for combo, value in (
+            (self._classifier_combo, experiment.classifier),
+            (self._norm_combo, experiment.normalization_type),
+            (self._std_combo, experiment.standardization_type),
+            (self._kernel_combo, experiment.kernel_type),
+        ):
+            if value is None:
+                continue
+            index = combo.findData(value)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+
+        if experiment.regularization_value is not None:
+            self._reg_input.setValue(float(experiment.regularization_value))
+        if experiment.latent_feature is not None:
+            self._dim_input.setValue(int(experiment.latent_feature))
+
+        self._sync_method_parameters()
+        self._set_status(
+            f"Loaded configuration from experiment #{experiment.id}", "neutral"
+        )
+
+    # ------------------------------------------------------------------
+    # Theming
+    # ------------------------------------------------------------------
+    def _toggle_theme(self) -> None:
+        self._theme = "light" if self._theme == "dark" else "dark"
+        self._palette = LIGHT_PALETTE if self._theme == "light" else DARK_PALETTE
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        self.setStyleSheet(build_style_sheet(self._palette))
+        self._theme_toggle_button.setText("🌙  Dark" if self._theme == "light" else "☀  Light")
+
+        color = self._palette[self._status_key]
+        self._status_dot.setStyleSheet(f"color: {color};")
+        self._status_label.setStyleSheet(f"color: {color}; font-weight: 600;")
+
+        self._charts_widget.set_palette(self._palette)
+        self._history_tab.set_palette(self._palette)
+        if self._last_result is not None:
+            self._show_predictions(self._last_result)
+
+        if hasattr(self, "_learning_materials_dialog") and self._learning_materials_dialog is not None:
+            try:
+                self._learning_materials_dialog.set_palette(self._palette)
+            except RuntimeError:
+                self._learning_materials_dialog = None
+
+    def _open_learning_materials(self, category_index: int = 0) -> None:
+        dialog = getattr(self, "_learning_materials_dialog", None)
+        try:
+            if dialog is not None:
+                dialog.select_topic(category_index)
+                dialog.raise_()
+                dialog.activateWindow()
+                return
+        except RuntimeError:
+            pass
+
+        from presentation.qt.learning_materials_dialog import LearningMaterialsDialog
+
+        self._learning_materials_dialog = LearningMaterialsDialog(
+            self._palette, parent=self
+        )
+        self._learning_materials_dialog.select_topic(category_index)
+        self._learning_materials_dialog.destroyed.connect(
+            lambda: setattr(self, "_learning_materials_dialog", None)
+        )
+        self._learning_materials_dialog.show()
 
     # ------------------------------------------------------------------
     # Actions
@@ -682,6 +1276,47 @@ class MainWindow(QMainWindow):
         if file_path:
             target_input.setText(file_path)
 
+    # ------------------------------------------------------------------
+    # Batch mode
+    # ------------------------------------------------------------------
+    def _on_batch_mode_toggled(self, checked: bool) -> None:
+        self._single_dataset_widget.setVisible(not checked)
+        self._batch_dataset_widget.setVisible(checked)
+        self._run_button.setText("Run Batch" if checked else "Run Experiment")
+
+    def _add_batch_files(self) -> None:
+        start_dir = str(Path.cwd())
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, "Select Dataset Files", start_dir, DATASET_FILTER
+        )
+        existing = {
+            self._batch_files_list.item(i).text() for i in range(self._batch_files_list.count())
+        }
+        for path in file_paths:
+            if path not in existing:
+                self._batch_files_list.addItem(path)
+                existing.add(path)
+        self._update_batch_caption()
+
+    def _remove_selected_batch_files(self) -> None:
+        for item in self._batch_files_list.selectedItems():
+            self._batch_files_list.takeItem(self._batch_files_list.row(item))
+        self._update_batch_caption()
+
+    def _clear_batch_files(self) -> None:
+        self._batch_files_list.clear()
+        self._update_batch_caption()
+
+    def _update_batch_caption(self) -> None:
+        count = self._batch_files_list.count()
+        if count < 2:
+            self._batch_files_caption.setText("Add 2+ files to enable batch mode.")
+        else:
+            pair_count = count * (count - 1)
+            self._batch_files_caption.setText(
+                f"{count} files selected → {pair_count} ordered pairs will be run."
+            )
+
     def _run_transfer_learning(self) -> None:
         # Guard against a stale reference: once the C++ QThread is deleted by
         # deleteLater the Python wrapper raises RuntimeError on any method call.
@@ -692,6 +1327,12 @@ class MainWindow(QMainWindow):
             # C++ object already deleted – treat it as "not running".
             self._worker = None
 
+        if self._batch_mode_check.isChecked():
+            self._run_batch_experiment()
+        else:
+            self._run_single_experiment()
+
+    def _run_single_experiment(self) -> None:
         source_path = self._source_input.text().strip()
         target_path = self._target_input.text().strip()
 
@@ -724,8 +1365,12 @@ class MainWindow(QMainWindow):
             classifier=self._classifier_combo.currentData(),
         )
 
+        # Kept so the completion handlers can record what was actually run,
+        # even if the user edits the form while the worker is still going.
+        self._last_request = request
+
         self._set_running(True)
-        self._set_status("Running experiment…", PALETTE["warning"])
+        self._set_status("Running experiment…", "warning")
 
         self._worker = TransferLearningWorker(self._use_case, request)
         self._worker.succeeded.connect(self._on_success)
@@ -738,15 +1383,66 @@ class MainWindow(QMainWindow):
         self._worker.finished.connect(self._worker.deleteLater)
         self._worker.start()
 
+    def _run_batch_experiment(self) -> None:
+        file_paths = [
+            self._batch_files_list.item(i).text() for i in range(self._batch_files_list.count())
+        ]
+
+        if len(file_paths) < 2:
+            QMessageBox.warning(
+                self,
+                "Not Enough Files",
+                "Add at least two dataset files to run a batch.",
+            )
+            return
+
+        missing = [p for p in file_paths if not Path(p).is_file()]
+        if missing:
+            QMessageBox.warning(
+                self,
+                "Dataset Not Found",
+                "The following path is not a readable file:\n\n" + "\n".join(missing),
+            )
+            return
+
+        request = BatchTransferLearningRequest(
+            method_name=self._method_combo.currentText(),
+            file_paths=file_paths,
+            normalization=self._norm_combo.currentData(),
+            standardization=self._std_combo.currentData(),
+            kernel_type=self._kernel_combo.currentData(),
+            regularization=self._reg_input.value(),
+            latent_dim=self._dim_input.value(),
+            classifier=self._classifier_combo.currentData(),
+        )
+
+        pair_count = len(file_paths) * (len(file_paths) - 1)
+        self._set_running(True)
+        self._set_status(f"Running batch ({pair_count} pairs)…", "warning")
+
+        self._worker = BatchTransferLearningWorker(self._use_case, request)
+        self._worker.succeeded.connect(self._on_batch_success)
+        self._worker.failed.connect(self._on_batch_error)
+        self._worker.finished.connect(lambda: self._set_running(False))
+        self._worker.finished.connect(lambda: setattr(self, "_worker", None))
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.start()
+
     def _set_running(self, running: bool) -> None:
         self._run_button.setEnabled(not running)
         self._run_action.setEnabled(not running)
-        self._run_button.setText("Running…" if running else "Run Experiment")
+        running_label = "Running…"
+        idle_label = "Run Batch" if self._batch_mode_check.isChecked() else "Run Experiment"
+        self._run_button.setText(running_label if running else idle_label)
         self._progress_bar.setVisible(running)
+        self._batch_mode_check.setEnabled(not running)
+        self._add_batch_files_button.setEnabled(not running)
+        self._remove_batch_file_button.setEnabled(not running)
+        self._clear_batch_files_button.setEnabled(not running)
 
     def _on_success(self, result: TransferLearningResult) -> None:
         self._last_result = result
-        self._set_status("Completed", PALETTE["success"])
+        self._set_status("Completed", "success")
         self._export_button.setEnabled(True)
         self._export_action.setEnabled(True)
 
@@ -758,15 +1454,123 @@ class MainWindow(QMainWindow):
 
         self._results_stack.setCurrentIndex(1)
         self._update_context_label()
+        self._record_run(result, error_message=None)
 
     def _on_error(self, message: str) -> None:
-        self._set_status("Failed", PALETTE["danger"])
+        self._set_status("Failed", "danger")
+        # Recorded before the modal opens: exec_() blocks until dismissed, and
+        # a failed configuration is worth keeping either way.
+        self._record_run(None, error_message=message)
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Critical)
         box.setWindowTitle("Experiment Failed")
         box.setText("The transfer learning run could not be completed.")
         box.setInformativeText(message)
         box.exec_()
+
+    def _on_batch_success(self, batch_result: BatchTransferLearningResult) -> None:
+        self._last_batch_result = batch_result
+        succeeded = sum(1 for pair in batch_result.pairs if pair.result is not None)
+        failed = len(batch_result.pairs) - succeeded
+        status = "Batch completed" if failed == 0 else f"Batch completed ({failed} pair(s) failed)"
+        self._set_status(status, "success" if failed == 0 else "warning")
+
+        # A single PDF report only makes sense for one pair — disable export
+        # rather than have it silently describe a stale single-pair result.
+        self._export_button.setEnabled(False)
+        self._export_action.setEnabled(False)
+
+        # Metric cards show the batch-wide average, matching the summary
+        # line on the Batch Results tab.
+        self._show_metrics(batch_result.average_metrics)
+        if batch_result.average_metrics is not None:
+            evaluable = sum(
+                1 for pair in batch_result.pairs if pair.result is not None and pair.result.metrics is not None
+            )
+            self._counts_label.setText(
+                f"Average over {evaluable} of {len(batch_result.pairs)} pairs  ·  "
+                f"{batch_result.average_metrics.total_samples} target samples evaluated in total  ·  "
+                f"{batch_result.average_metrics.correct_predictions} correct  ·  "
+                f"{batch_result.average_metrics.wrong_predictions} incorrect"
+            )
+
+        self._populate_batch_results(batch_result)
+        self._results_stack.setCurrentIndex(1)
+        if self._batch_results_tab_index >= 0:
+            self._results_tabs.setCurrentIndex(self._batch_results_tab_index)
+
+    def _on_batch_error(self, message: str) -> None:
+        self._set_status("Batch Failed", "danger")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Critical)
+        box.setWindowTitle("Batch Run Failed")
+        box.setText("The batch run could not be completed.")
+        box.setInformativeText(message)
+        box.exec_()
+
+    def _populate_batch_results(self, batch_result: BatchTransferLearningResult) -> None:
+        table = self._batch_results_table
+        table.setRowCount(len(batch_result.pairs))
+
+        success_brush = QBrush(QColor(self._palette["success"]))
+        danger_brush = QBrush(QColor(self._palette["danger"]))
+        succeeded = 0
+
+        for row, pair in enumerate(batch_result.pairs):
+            source_name = Path(pair.source_path).name
+            target_name = Path(pair.target_path).name
+            metrics = pair.result.metrics if pair.result is not None else None
+
+            if metrics is not None:
+                succeeded += 1
+                status_text, status_brush = "OK", success_brush
+                values = [
+                    f"{metrics.accuracy:.4f}",
+                    f"{metrics.precision:.4f}",
+                    f"{metrics.recall:.4f}",
+                    f"{metrics.f1_score:.4f}",
+                    str(metrics.total_samples),
+                    str(metrics.correct_predictions),
+                    str(metrics.wrong_predictions),
+                ]
+            elif pair.result is not None:
+                status_text, status_brush = "No labels", None
+                values = ["—"] * 7
+            else:
+                status_text, status_brush = "Error", danger_brush
+                values = [pair.error or "Unknown error"] + [""] * 6
+
+            cells = [source_name, target_name, status_text, *values]
+            for column, value in enumerate(cells):
+                item = QTableWidgetItem(value)
+                if column >= 2:
+                    item.setTextAlignment(Qt.AlignCenter if column == 2 else Qt.AlignRight | Qt.AlignVCenter)
+                if column == 2 and status_brush is not None:
+                    item.setForeground(status_brush)
+                if column == 3 and status_text == "Error":
+                    item.setToolTip(pair.error or "")
+                table.setItem(row, column, item)
+
+        header = table.horizontalHeader()
+        for column in range(2):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        for column in range(2, 10):
+            header.setSectionResizeMode(column, QHeaderView.Stretch)
+
+        total = len(batch_result.pairs)
+        avg = batch_result.average_metrics
+        if avg is not None:
+            self._batch_summary_label.setText(
+                f"{total} pairs run — {succeeded} produced metrics, {total - succeeded} did not. "
+                f"Average over evaluable pairs: accuracy {avg.accuracy:.4f} | "
+                f"precision {avg.precision:.4f} | recall {avg.recall:.4f} | f1 {avg.f1_score:.4f} "
+                f"({avg.correct_predictions}/{avg.total_samples} correct)"
+            )
+        else:
+            self._batch_summary_label.setText(
+                f"{total} pairs run — no pair produced evaluable metrics "
+                "(datasets may be missing labels, or every pair failed)."
+            )
 
     def _show_about(self) -> None:
         QMessageBox.about(
@@ -850,8 +1654,8 @@ class MainWindow(QMainWindow):
         self._fullscreen_button.setEnabled(True)
         self._results_tabs.setCurrentIndex(0)
 
-        correct_brush = QBrush(QColor(PALETTE["success"]))
-        wrong_brush = QBrush(QColor(PALETTE["danger"]))
+        correct_brush = QBrush(QColor(self._palette["success"]))
+        wrong_brush = QBrush(QColor(self._palette["danger"]))
 
         row_count = len(result.target_predictions)
         table.setRowCount(row_count)
@@ -906,7 +1710,9 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             # The user already closed the previous window (WA_DeleteOnClose).
             pass
-        self._predictions_window = PredictionsWindow(self._last_result, parent=None)
+        self._predictions_window = PredictionsWindow(
+            self._last_result, self._palette, build_style_sheet(self._palette), parent=None
+        )
         self._predictions_window.destroyed.connect(
             lambda: setattr(self, "_predictions_window", None)
         )
@@ -981,7 +1787,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._set_status("Report exported", PALETTE["success"])
+        self._set_status("Report exported", "success")
         QMessageBox.information(
             self, "Report Exported", f"The PDF report was saved to:\n\n{file_path}"
         )
@@ -1066,7 +1872,7 @@ class MainWindow(QMainWindow):
                          "<th>Result</th></tr>")
             for row in range(len(result.target_predictions)):
                 is_correct = result.prediction_correctness[row] == "Right"
-                colour = PALETTE["success"] if is_correct else PALETTE["danger"]
+                colour = self._palette["success"] if is_correct else self._palette["danger"]
                 verdict = "Correct" if is_correct else "Incorrect"
                 parts.append(
                     f"<tr><td>Sample {row + 1}</td>"

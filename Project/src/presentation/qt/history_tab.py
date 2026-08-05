@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
 )
 
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
-from domain.entities import ExperimentHistoryEntry, ExperimentStatus
+from domain.entities import ExperimentHistoryEntry, ExperimentStatus, User
 
 #: ``(header, width hint)``. ``None`` means the column stretches.
 _COLUMNS: list[tuple[str, int | None]] = [
@@ -67,6 +67,7 @@ class HistoryTab(QWidget):
         super().__init__(parent)
         self._catalog = catalog
         self._palette = palette
+        self._current_user: User | None = None
         self._entries: list[ExperimentHistoryEntry] = []
         self._build_ui()
         self.refresh()
@@ -78,13 +79,8 @@ class HistoryTab(QWidget):
         layout.setSpacing(8)
 
         # ── Toolbar ──────────────────────────────────────────────────────
-        user_label = QLabel("Filter by user:")
-        user_label.setObjectName("fieldLabel")
-
-        self._user_filter = QComboBox()
-        self._user_filter.setMinimumWidth(200)
-        self._user_filter.setToolTip("Show only experiments owned by this user")
-        self._user_filter.currentIndexChanged.connect(self.refresh)
+        self._user_label = QLabel("No user logged in")
+        self._user_label.setObjectName("fieldLabel")
 
         self._refresh_button = QPushButton("⟳  Refresh")
         self._refresh_button.setCursor(Qt.PointingHandCursor)
@@ -106,8 +102,7 @@ class HistoryTab(QWidget):
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
-        toolbar.addWidget(user_label)
-        toolbar.addWidget(self._user_filter)
+        toolbar.addWidget(self._user_label)
         toolbar.addStretch(1)
         toolbar.addWidget(self._load_button)
         toolbar.addWidget(self._delete_button)
@@ -156,19 +151,31 @@ class HistoryTab(QWidget):
         self._catalog = catalog
         self.refresh()
 
+    def set_current_user(self, user: User | None) -> None:
+        """Update authenticated user and reload user-specific history."""
+        self._current_user = user
+        self.refresh()
+
     # ------------------------------------------------------------------
     def refresh(self) -> None:
-        """Reload users and experiments from the database."""
+        """Reload experiments for the currently authenticated user."""
         if self._catalog is None:
             self._entries = []
             self._populate()
             self._caption.setText("History is unavailable — no database connection.")
             return
 
-        self._reload_user_filter()
+        if self._current_user is None or self._current_user.id is None:
+            self._entries = []
+            self._user_label.setText("No user logged in")
+            self._populate()
+            self._caption.setText("Please log in to view your experiment history.")
+            return
+
+        self._user_label.setText(f"Showing history for: {self._current_user.display_name}")
 
         try:
-            self._entries = self._catalog.history(self._selected_user_id())
+            self._entries = self._catalog.history(self._current_user.id)
         except Exception as exc:  # noqa: BLE001 - surfaced in the caption
             self._entries = []
             self._populate()
@@ -180,34 +187,8 @@ class HistoryTab(QWidget):
         self._caption.setText(
             "No experiments recorded yet."
             if total == 0
-            else f"{total} experiment{'s' if total != 1 else ''} recorded."
+            else f"{total} experiment{'s' if total != 1 else ''} recorded for your account."
         )
-
-    def _reload_user_filter(self) -> None:
-        """Rebuild the filter combo, preserving the current selection.
-
-        Signals are blocked while repopulating: ``currentIndexChanged`` is
-        wired to :meth:`refresh`, so mutating the combo inside refresh would
-        otherwise recurse.
-        """
-        assert self._catalog is not None
-        previous = self._selected_user_id()
-
-        self._user_filter.blockSignals(True)
-        try:
-            self._user_filter.clear()
-            self._user_filter.addItem("All users", None)
-            for user in self._catalog.list_users():
-                self._user_filter.addItem(f"{user.name} ({user.role.label})", user.id)
-            if previous is not None:
-                index = self._user_filter.findData(previous)
-                if index >= 0:
-                    self._user_filter.setCurrentIndex(index)
-        finally:
-            self._user_filter.blockSignals(False)
-
-    def _selected_user_id(self) -> int | None:
-        return self._user_filter.currentData() if self._user_filter.count() else None
 
     # ------------------------------------------------------------------
     def _populate(self) -> None:

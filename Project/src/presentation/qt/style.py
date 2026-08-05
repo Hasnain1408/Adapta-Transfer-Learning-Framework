@@ -4,9 +4,14 @@ Everything visual lives here: the colour tokens in ``PALETTE`` and the single
 ``STYLE_SHEET`` applied to the main window. Widgets are targeted by object name
 (``runButton``, ``metricCard``, ...) so no module needs an inline stylesheet.
 
-``PALETTE`` is also imported by ``main_window`` for the few colours that must be
-applied through the Qt API rather than QSS (table cell foregrounds, the status
-dot), which keeps a single source of truth for the theme.
+The theme is a dark, card-based dashboard look (dark navy surfaces, a teal
+accent, per-card colour accents) so the app reads like a professional
+analytics workbench rather than a plain form.
+
+``PALETTE`` is also imported by ``main_window`` and ``charts_widget`` for the
+colours that must be applied through the Qt/Matplotlib API rather than QSS
+(table cell foregrounds, the status dot, chart series), which keeps a single
+source of truth for the theme.
 """
 
 from __future__ import annotations
@@ -16,31 +21,75 @@ from string import Template
 
 _ASSETS = (Path(__file__).parent / "assets").as_posix()
 
-PALETTE: dict[str, str] = {
+DARK_PALETTE: dict[str, str] = {
     # Surfaces
-    "page": "#f4f6f8",
-    "surface": "#ffffff",
-    "surface_alt": "#fafbfc",
-    "surface_sunken": "#eef1f4",
+    "page": "#0c1016",
+    "surface": "#151b24",
+    "surface_alt": "#1b222d",
+    "surface_sunken": "#0f141b",
     # Borders
-    "border": "#dde2e8",
-    "border_strong": "#c3ccd6",
+    "border": "#262f3b",
+    "border_strong": "#38424f",
     # Text
-    "text": "#1a2229",
-    "text_secondary": "#5b6b7c",
-    "text_muted": "#8a97a5",
-    "text_disabled": "#b6bfc9",
-    # Accent
-    "accent": "#1e6fd9",
-    "accent_hover": "#1a60bd",
-    "accent_pressed": "#164f9e",
-    "accent_soft": "#e8f0fc",
+    "text": "#eaeff5",
+    "text_secondary": "#9aa7b8",
+    "text_muted": "#6b7787",
+    "text_disabled": "#454e5b",
+    # Accent (teal)
+    "accent": "#17b8a6",
+    "accent_hover": "#14a394",
+    "accent_pressed": "#108a7d",
+    "accent_soft": "#12332f",
     # Semantic
-    "success": "#14804a",
-    "danger": "#b3261e",
-    "warning": "#8a5300",
-    "neutral": "#5b6b7c",
+    "success": "#2fbf71",
+    "danger": "#f0554a",
+    "warning": "#f2ab3d",
+    "neutral": "#9aa7b8",
+    # Per-metric accent colours (used on the headline stat cards / charts)
+    "metric_teal": "#2dd4bf",
+    "metric_purple": "#a78bfa",
+    "metric_amber": "#fbbf24",
+    "metric_pink": "#f472b6",
+    # Overlay surfaces
+    "tooltip_bg": "#05070a",
 }
+
+LIGHT_PALETTE: dict[str, str] = {
+    # Surfaces
+    "page": "#f2f4f8",
+    "surface": "#ffffff",
+    "surface_alt": "#f0f2f7",
+    "surface_sunken": "#e7eaf1",
+    # Borders
+    "border": "#dde2eb",
+    "border_strong": "#c5ccd9",
+    # Text
+    "text": "#171d26",
+    "text_secondary": "#4c5867",
+    "text_muted": "#788495",
+    "text_disabled": "#aab2c0",
+    # Accent (teal)
+    "accent": "#0e9488",
+    "accent_hover": "#0c8377",
+    "accent_pressed": "#0a6f65",
+    "accent_soft": "#dcf3f0",
+    # Semantic
+    "success": "#1a9c56",
+    "danger": "#d33f33",
+    "warning": "#c07f18",
+    "neutral": "#4c5867",
+    # Per-metric accent colours (used on the headline stat cards / charts)
+    "metric_teal": "#0e9488",
+    "metric_purple": "#7c5cf0",
+    "metric_amber": "#d1930f",
+    "metric_pink": "#d1478f",
+    # Overlay surfaces
+    "tooltip_bg": "#171d26",
+}
+
+#: Default/back-compat export — prefer ``DARK_PALETTE`` / ``LIGHT_PALETTE`` and
+#: ``build_style_sheet`` for anything that needs to react to a theme switch.
+PALETTE = DARK_PALETTE
 
 # Qt style sheets are full of braces, so ``str.format`` is unusable here.
 # ``string.Template`` only treats ``$`` as special, and QSS never uses it.
@@ -52,8 +101,23 @@ QWidget {
     font-size: 13px;
     color: $text;
 }
-QMainWindow, QWidget#centralWidget {
+QMainWindow, QWidget#centralWidget, QDialog {
     background-color: $page;
+}
+
+/* ---------- Header / brand ---------- */
+QLabel#brandMark {
+    background-color: $accent;
+    border-radius: 9px;
+}
+QLabel#appTitle {
+    color: $text;
+    font-size: 18px;
+    font-weight: 700;
+}
+QLabel#appSubtitle {
+    color: $text_muted;
+    font-size: 12px;
 }
 
 /* ---------- Labels ---------- */
@@ -70,7 +134,7 @@ QLabel#fieldLabel:disabled {
     color: $text_disabled;
 }
 QLabel#captionLabel {
-    color: $text_secondary;
+    color: $text_muted;
     font-size: 12px;
 }
 QLabel#emptyStateTitle {
@@ -87,9 +151,9 @@ QLabel#emptyStateBody {
 QGroupBox {
     background-color: $surface;
     border: 1px solid $border;
-    border-radius: 8px;
-    margin-top: 10px;
-    padding: 14px 14px 12px 14px;
+    border-radius: 12px;
+    margin-top: 12px;
+    padding: 16px 16px 14px 16px;
     font-weight: 600;
 }
 QGroupBox::title {
@@ -105,9 +169,9 @@ QGroupBox::title {
 
 /* ---------- Text inputs ---------- */
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-    background-color: $surface;
+    background-color: $surface_alt;
     border: 1px solid $border_strong;
-    border-radius: 6px;
+    border-radius: 7px;
     color: $text;
     padding: 6px 10px;
     min-height: 20px;
@@ -126,7 +190,7 @@ QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabl
     color: $text_disabled;
 }
 QLineEdit[readOnly="true"] {
-    background-color: $surface_alt;
+    background-color: $surface_sunken;
     color: $text_secondary;
 }
 
@@ -149,9 +213,9 @@ QComboBox::down-arrow:disabled {
     image: url($assets/chevron_down_disabled.svg);
 }
 QComboBox QAbstractItemView {
-    background-color: $surface;
+    background-color: $surface_alt;
     border: 1px solid $border_strong;
-    border-radius: 6px;
+    border-radius: 7px;
     outline: none;
     padding: 4px;
     color: $text;
@@ -185,16 +249,16 @@ QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
 
 /* ---------- Buttons ---------- */
 QPushButton {
-    background-color: $surface;
+    background-color: $surface_alt;
     border: 1px solid $border_strong;
-    border-radius: 6px;
+    border-radius: 7px;
     color: $text;
     padding: 7px 16px;
     font-weight: 500;
     min-height: 20px;
 }
 QPushButton:hover {
-    background-color: $surface_alt;
+    background-color: $surface;
     border-color: $text_muted;
 }
 QPushButton:pressed {
@@ -211,8 +275,8 @@ QPushButton:focus {
 QPushButton#runButton {
     background-color: $accent;
     border: 1px solid $accent;
-    color: #ffffff;
-    font-weight: 600;
+    color: #04211d;
+    font-weight: 700;
     padding: 8px 22px;
 }
 QPushButton#runButton:hover {
@@ -228,12 +292,127 @@ QPushButton#runButton:disabled {
     border-color: $border;
     color: $text_disabled;
 }
+QPushButton#fullscreenButton {
+    background-color: $accent_soft;
+    border: 1px solid $accent;
+    color: $accent;
+    font-weight: 600;
+    padding: 6px 14px;
+}
+QPushButton#fullscreenButton:hover {
+    background-color: $accent;
+    color: #04211d;
+}
+QPushButton#fullscreenButton:pressed {
+    background-color: $accent_pressed;
+    border-color: $accent_pressed;
+    color: #ffffff;
+}
+QPushButton#fullscreenButton:disabled {
+    background-color: $surface_sunken;
+    border-color: $border;
+    color: $text_disabled;
+}
+QPushButton#fullscreenCloseButton {
+    background-color: $surface_alt;
+    border: 1px solid $border_strong;
+    color: $text_secondary;
+    padding: 6px 14px;
+}
+QPushButton#fullscreenCloseButton:hover {
+    background-color: $surface_sunken;
+    border-color: $text_muted;
+    color: $text;
+}
+QPushButton#swapButton {
+    background-color: $surface_alt;
+    border: 1px solid $border_strong;
+    color: $text;
+    padding: 10px 12px;
+    font-weight: 600;
+}
+QPushButton#swapButton:hover {
+    background-color: $accent_soft;
+    border-color: $accent;
+    color: $accent;
+}
+QPushButton#swapButton:pressed {
+    background-color: $surface_sunken;
+}
+/* Destructive actions (delete a user, an experiment, a catalogue entry).
+   Outlined rather than filled so it reads as available but not inviting. */
+QPushButton#dangerButton {
+    background-color: transparent;
+    border: 1px solid $danger;
+    color: $danger;
+    font-weight: 600;
+}
+QPushButton#dangerButton:hover {
+    background-color: $danger;
+    color: #ffffff;
+}
+QPushButton#dangerButton:pressed {
+    background-color: $danger;
+    color: #ffffff;
+}
+QPushButton#dangerButton:disabled {
+    background-color: transparent;
+    border-color: $border;
+    color: $text_disabled;
+}
+QPushButton#linkButton {
+    background-color: transparent;
+    border: none;
+    color: $accent;
+    padding: 4px 6px;
+    font-weight: 600;
+}
+QPushButton#linkButton:hover {
+    color: $accent_hover;
+    text-decoration: underline;
+}
+QPushButton#linkButton:pressed {
+    color: $accent_pressed;
+}
+QPushButton#themeToggleButton {
+    background-color: $surface_alt;
+    border: 1px solid $border_strong;
+    border-radius: 16px;
+    color: $text_secondary;
+    padding: 6px 14px;
+    font-weight: 600;
+}
+QPushButton#themeToggleButton:hover {
+    border-color: $accent;
+    color: $accent;
+}
+QPushButton#themeToggleButton:pressed {
+    background-color: $accent_soft;
+}
+
+/* ---------- Sidebar ---------- */
+QWidget#sidebar {
+    background-color: transparent;
+}
 
 /* ---------- Metric cards ---------- */
 QFrame#metricCard {
     background-color: $surface;
     border: 1px solid $border;
-    border-radius: 8px;
+    border-top: 3px solid $border_strong;
+    border-radius: 12px;
+}
+QFrame#metricCard[accent="teal"] {
+    border-top: 3px solid $metric_teal;
+}
+QFrame#metricCard[accent="purple"] {
+    border-top: 3px solid $metric_purple;
+}
+QFrame#metricCard[accent="amber"] {
+    border-top: 3px solid $metric_amber;
+}
+QFrame#metricCard[accent="pink"] {
+    border-top: 3px solid $metric_pink;
 }
 QLabel#metricCardTitle {
     color: $text_secondary;
@@ -244,8 +423,8 @@ QLabel#metricCardTitle {
 }
 QLabel#metricCardValue {
     color: $text;
-    font-size: 22px;
-    font-weight: 600;
+    font-size: 24px;
+    font-weight: 700;
 }
 QLabel#metricCardValue[placeholder="true"] {
     color: $text_disabled;
@@ -255,7 +434,7 @@ QLabel#metricCardValue[placeholder="true"] {
 QTabWidget::pane {
     background-color: $surface;
     border: 1px solid $border;
-    border-radius: 8px;
+    border-radius: 12px;
     top: -1px;
 }
 /* Do not set font-weight on tabs: Qt measures the tab with the base font but
@@ -266,7 +445,7 @@ QTabBar::tab {
     border: 1px solid transparent;
     border-bottom: 2px solid transparent;
     color: $text_secondary;
-    padding: 8px 18px;
+    padding: 9px 18px;
     margin-right: 2px;
 }
 QTabBar::tab:hover:!selected {
@@ -327,7 +506,7 @@ QCheckBox::indicator {
     height: 15px;
     border: 1px solid $border_strong;
     border-radius: 4px;
-    background-color: $surface;
+    background-color: $surface_alt;
 }
 QCheckBox::indicator:hover {
     border-color: $accent;
@@ -355,14 +534,14 @@ QMenuBar::item:selected {
     color: $accent;
 }
 QMenu {
-    background-color: $surface;
+    background-color: $surface_alt;
     border: 1px solid $border_strong;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 5px;
 }
 QMenu::item {
     padding: 7px 26px 7px 16px;
-    border-radius: 4px;
+    border-radius: 5px;
     color: $text;
 }
 QMenu::item:selected {
@@ -431,7 +610,7 @@ QScrollBar::handle:vertical {
     min-height: 28px;
 }
 QScrollBar::handle:vertical:hover {
-    background: $text_muted;
+    background: $accent;
 }
 QScrollBar:horizontal {
     background: transparent;
@@ -444,7 +623,7 @@ QScrollBar::handle:horizontal {
     min-width: 28px;
 }
 QScrollBar::handle:horizontal:hover {
-    background: $text_muted;
+    background: $accent;
 }
 QScrollBar::add-line, QScrollBar::sub-line {
     width: 0;
@@ -456,14 +635,20 @@ QScrollBar::add-page, QScrollBar::sub-page {
 
 /* ---------- Tooltips ---------- */
 QToolTip {
-    background-color: $text;
-    color: #ffffff;
-    border: none;
-    border-radius: 4px;
+    background-color: $tooltip_bg;
+    color: $text;
+    border: 1px solid $border_strong;
+    border-radius: 5px;
     padding: 6px 9px;
     font-size: 12px;
 }
 """
 )
 
-STYLE_SHEET = _TEMPLATE.substitute(assets=_ASSETS, **PALETTE)
+
+def build_style_sheet(palette: dict[str, str]) -> str:
+    """Render the QSS template for a given palette (dark or light)."""
+    return _TEMPLATE.substitute(assets=_ASSETS, **palette)
+
+
+STYLE_SHEET = build_style_sheet(DARK_PALETTE)

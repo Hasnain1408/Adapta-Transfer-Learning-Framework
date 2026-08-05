@@ -34,6 +34,13 @@ env/
 .env/
 .venv/
 
+# Secrets — the database connection string lives here.
+# Note the trailing slash above only matches a *directory* named .env;
+# these patterns are what keep the credentials file itself out of git.
+.env
+.env.*
+!.env.example
+
 # IDE/Editor
 .vscode/
 .idea/

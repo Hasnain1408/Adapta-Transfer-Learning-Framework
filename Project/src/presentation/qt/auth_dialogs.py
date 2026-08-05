@@ -1,4 +1,4 @@
-"""Login and registration, shown before the main window opens.
+"""Login and registration, shown on demand from the main window.
 
 A single modal with two pages (login / register) toggled by a link-style
 button, rather than two separate dialogs, so switching between them keeps the
