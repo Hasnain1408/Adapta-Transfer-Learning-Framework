@@ -160,128 +160,52 @@ class MetricCard(QFrame):
         self._value_label.style().polish(self._value_label)
 
 
-class PredictionsWindow(QMainWindow):
-    """Standalone fullscreen window that mirrors the predictions table."""
+class FullScreenViewer(QMainWindow):
+    """Generic standalone window that borrows the results tab widget.
+
+    Reparents the actual tab widget in place — it keeps its live state
+    (chart figure, populated table rows, filter checkboxes) and is handed
+    back to its original layout slot when the window closes, so no data has
+    to be duplicated or re-synced.
+    """
 
     def __init__(
         self,
-        result: TransferLearningResult,
-        palette: dict[str, str],
+        title: str,
+        content: QWidget,
         stylesheet: str,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._palette = palette
-        self.setWindowTitle("Predictions — Full Screen")
+        self.setWindowTitle(f"{title} — Full Screen")
         self.setMinimumSize(800, 540)
         self.setStyleSheet(stylesheet)
         self.setAttribute(Qt.WA_DeleteOnClose)
 
-        # ── Filter bar ──────────────────────────────────────────────────
-        self._incorrect_only = QCheckBox("Show incorrect predictions only")
-        self._correct_only = QCheckBox("Show correct predictions only")
+        title_label = QLabel(title)
+        title_label.setObjectName("fullscreenTitleLabel")
 
         close_btn = QPushButton("✕  Close")
         close_btn.setObjectName("fullscreenCloseButton")
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.clicked.connect(self.close)
 
-        filter_row = QHBoxLayout()
-        filter_row.setContentsMargins(0, 0, 0, 0)
-        filter_row.setSpacing(10)
-        filter_row.addWidget(self._incorrect_only)
-        filter_row.addWidget(self._correct_only)
-        filter_row.addStretch(1)
-        filter_row.addWidget(close_btn)
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addWidget(title_label)
+        top_row.addStretch(1)
+        top_row.addWidget(close_btn)
 
-        # ── Predictions table ────────────────────────────────────────────
-        self._table = QTableWidget()
-        self._table.setColumnCount(4)
-        self._table.setHorizontalHeaderLabels(["Sample", "Actual Label", "Predicted Label", "Result"])
-        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._table.setAlternatingRowColors(True)
-        self._table.setShowGrid(False)
-        self._table.setWordWrap(False)
-        self._table.verticalHeader().setVisible(False)
-        self._table.verticalHeader().setDefaultSectionSize(30)
-        self._table.horizontalHeader().setHighlightSections(False)
-        self._table.horizontalHeader().setStretchLastSection(True)
-
-        for col, alignment in enumerate(
-            [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter]
-        ):
-            item = self._table.horizontalHeaderItem(col)
-            if item:
-                item.setTextAlignment(alignment | Qt.AlignVCenter)
-
-        # ── Layout ───────────────────────────────────────────────────────
         container = QWidget()
         container.setObjectName("centralWidget")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(10)
-        layout.addLayout(filter_row)
-        layout.addWidget(self._table, 1)
+        layout.addLayout(top_row)
+        layout.addWidget(content, 1)
         self.setCentralWidget(container)
 
-        self._populate(result)
-        self._incorrect_only.toggled.connect(self._on_filter_toggled)
-        self._correct_only.toggled.connect(self._on_filter_toggled)
         self.showMaximized()
-
-    def _populate(self, result: TransferLearningResult) -> None:
-        self._result = result
-        preds = result.target_predictions
-        if preds is None:
-            return
-
-        correct_brush = QBrush(QColor(self._palette["success"]))
-        wrong_brush = QBrush(QColor(self._palette["danger"]))
-
-        self._table.setRowCount(len(preds))
-        for row in range(len(preds)):
-            is_correct = result.prediction_correctness[row] == "Right"
-            cells = [
-                f"Sample {row + 1}",
-                str(result.target_actuals[row]),
-                str(preds[row]),
-                "✓ Correct" if is_correct else "✗ Incorrect",
-            ]
-            for col, value in enumerate(cells):
-                item = QTableWidgetItem(value)
-                if col:
-                    item.setTextAlignment(Qt.AlignCenter)
-                if col == 3:
-                    item.setForeground(correct_brush if is_correct else wrong_brush)
-                self._table.setItem(row, col, item)
-
-        header = self._table.horizontalHeader()
-        for col in range(4):
-            header.setSectionResizeMode(col, QHeaderView.Stretch)
-
-    def _on_filter_toggled(self) -> None:
-        sender = self.sender()
-        if sender is None or not sender.isChecked():
-            self._apply_filter()
-            return
-        other = self._incorrect_only if sender is self._correct_only else self._correct_only
-        other.blockSignals(True)
-        other.setChecked(False)
-        other.blockSignals(False)
-        self._apply_filter()
-
-    def _apply_filter(self) -> None:
-        result = self._result
-        if result is None or result.prediction_correctness is None:
-            return
-        correct_only = self._correct_only.isChecked()
-        incorrect_only = self._incorrect_only.isChecked()
-        for row, correctness in enumerate(result.prediction_correctness):
-            hide = (
-                incorrect_only and correctness == "Right"
-            ) or (correct_only and correctness == "Wrong")
-            self._table.setRowHidden(row, hide)
 
 
 class MainWindow(QMainWindow):
@@ -458,11 +382,9 @@ class MainWindow(QMainWindow):
         self._correct_only_check = QCheckBox("Show correct predictions only")
         self._correct_only_check.setEnabled(False)
 
-        self._fullscreen_button = QPushButton("⛶  Full Screen")
-        self._fullscreen_button.setObjectName("fullscreenButton")
-        self._fullscreen_button.setCursor(Qt.PointingHandCursor)
-        self._fullscreen_button.setToolTip("Open predictions in a dedicated full-screen window")
-        self._fullscreen_button.setEnabled(False)
+        self._results_fullscreen_button = self._build_fullscreen_button(
+            "Open the results tabs in a dedicated full-screen window"
+        )
 
         self._predictions_table = self._build_table(
             ["Sample", "Actual Label", "Predicted Label", "Result"]
@@ -894,7 +816,6 @@ class MainWindow(QMainWindow):
         filter_row.addWidget(self._incorrect_only_check)
         filter_row.addWidget(self._correct_only_check)
         filter_row.addStretch(1)
-        filter_row.addWidget(self._fullscreen_button)
         predictions_layout.addLayout(filter_row)
         predictions_layout.addWidget(self._predictions_table, 1)
 
@@ -930,6 +851,8 @@ class MainWindow(QMainWindow):
         self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
         self._history_tab_index = self._results_tabs.indexOf(self._history_tab)
         self._set_history_visible(self._current_user is not None)
+
+        self._results_tabs.setCornerWidget(self._results_fullscreen_button, Qt.TopRightCorner)
         return self._results_tabs
 
     def _build_status_bar(self) -> None:
@@ -955,6 +878,14 @@ class MainWindow(QMainWindow):
         label = QLabel(text)
         label.setObjectName("fieldLabel")
         return label
+
+    def _build_fullscreen_button(self, tooltip: str) -> QPushButton:
+        button = QPushButton("⛶  Full Screen")
+        button.setObjectName("fullscreenButton")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setToolTip(tooltip)
+        button.setEnabled(False)
+        return button
 
     def _connect_signals(self) -> None:
         self._source_input.clicked.connect(self._pick_source)
@@ -984,7 +915,7 @@ class MainWindow(QMainWindow):
         self._method_combo.currentTextChanged.connect(self._sync_method_parameters)
         self._incorrect_only_check.toggled.connect(self._on_prediction_filter_toggled)
         self._correct_only_check.toggled.connect(self._on_prediction_filter_toggled)
-        self._fullscreen_button.clicked.connect(self._open_predictions_fullscreen)
+        self._results_fullscreen_button.clicked.connect(self._open_results_fullscreen)
         self._theme_toggle_button.clicked.connect(self._toggle_theme)
 
         self._logout_button.clicked.connect(self._handle_auth_button_clicked)
@@ -1513,6 +1444,8 @@ class MainWindow(QMainWindow):
         self._show_transformed_features(result)
         self._charts_widget.update_result(result)
 
+        self._results_fullscreen_button.setEnabled(True)
+
         self._results_stack.setCurrentIndex(1)
         self._update_context_label()
         self._record_run(result, error_message=None)
@@ -1556,6 +1489,7 @@ class MainWindow(QMainWindow):
             )
 
         self._populate_batch_results(batch_result)
+        self._results_fullscreen_button.setEnabled(True)
         self._results_stack.setCurrentIndex(1)
         if self._batch_results_tab_index >= 0:
             self._results_tabs.setCurrentIndex(self._batch_results_tab_index)
@@ -1706,7 +1640,6 @@ class MainWindow(QMainWindow):
             table.setRowCount(0)
             self._incorrect_only_check.setEnabled(False)
             self._correct_only_check.setEnabled(False)
-            self._fullscreen_button.setEnabled(False)
             self._results_tabs.setTabEnabled(0, False)
             self._results_tabs.setCurrentIndex(1)
             return
@@ -1714,7 +1647,6 @@ class MainWindow(QMainWindow):
         self._results_tabs.setTabEnabled(0, True)
         self._incorrect_only_check.setEnabled(True)
         self._correct_only_check.setEnabled(True)
-        self._fullscreen_button.setEnabled(True)
         self._results_tabs.setCurrentIndex(0)
 
         correct_brush = QBrush(QColor(self._palette["success"]))
@@ -1771,13 +1703,17 @@ class MainWindow(QMainWindow):
             ) or (correct_only and correctness == "Wrong")
             self._predictions_table.setRowHidden(row, hide)
 
-    def _open_predictions_fullscreen(self) -> None:
-        """Open (or raise) the standalone predictions window."""
-        if self._last_result is None or self._last_result.target_predictions is None:
-            return
-        # Keep a reference so the window is not immediately garbage-collected,
-        # and bring it to the front if it is already open.
-        win = getattr(self, "_predictions_window", None)
+    def _open_results_fullscreen(self) -> None:
+        """Move the whole results tab widget into a maximized window.
+
+        All tabs (Predictions, Visualizations, Transformed Features, Dataset
+        Summary, Batch Results, History) move together and stay switchable —
+        this is one full-screen view over the tab strip, not a separate one
+        per tab. ``self._results_tabs`` is reparented in place (not copied),
+        so it keeps its live state, and is handed back to the same slot in
+        ``self._results_stack`` when the window closes.
+        """
+        win = getattr(self, "_results_window", None)
         try:
             if win is not None:
                 win.raise_()
@@ -1786,12 +1722,30 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             # The user already closed the previous window (WA_DeleteOnClose).
             pass
-        self._predictions_window = PredictionsWindow(
-            self._last_result, self._palette, build_style_sheet(self._palette), parent=None
+
+        origin_index = self._results_stack.indexOf(self._results_tabs)
+        self._results_stack.removeWidget(self._results_tabs)
+        # The corner button travels with the tab widget (it's the same
+        # instance, just reparented) — hide it so a window already in full
+        # screen doesn't show a button to open full screen again.
+        self._results_fullscreen_button.hide()
+        win = FullScreenViewer(
+            "Results", self._results_tabs, build_style_sheet(self._palette), parent=None
         )
-        self._predictions_window.destroyed.connect(
-            lambda: setattr(self, "_predictions_window", None)
-        )
+        # QStackedWidget.removeWidget() leaves the widget hidden (it was only
+        # ever shown as the "current" stack page) — without this it silently
+        # stays invisible in its new window.
+        self._results_tabs.show()
+        self._results_window = win
+
+        def _restore() -> None:
+            self._results_stack.insertWidget(origin_index, self._results_tabs)
+            self._results_tabs.show()
+            self._results_stack.setCurrentWidget(self._results_tabs)
+            self._results_fullscreen_button.show()
+            self._results_window = None
+
+        win.destroyed.connect(_restore)
 
     def _show_transformed_features(self, result: TransferLearningResult) -> None:
         matrix = result.transformed_target
