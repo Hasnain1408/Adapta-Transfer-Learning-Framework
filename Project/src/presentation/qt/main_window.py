@@ -909,6 +909,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_browse_history_button"):
             self._browse_history_button.setVisible(self._catalog is not None and signed_in)
 
+        self._history_tab.set_current_user(self._current_user)
         self._set_history_visible(signed_in)
 
     def _set_history_visible(self, visible: bool) -> None:
@@ -948,7 +949,6 @@ class MainWindow(QMainWindow):
         self._update_user_label()
         self._update_context_label()
         self._update_auth_ui()
-        self._history_tab.refresh()
         if self._current_user is not None:
             self._set_status(f"Signed in as {self._current_user.display_name}", "success")
 
@@ -972,11 +972,14 @@ class MainWindow(QMainWindow):
     ) -> None:
         """Persist the run that just finished.
 
-        Recording is best-effort by design: the experiment has already been
-        computed and shown, so a database failure here is reported in the
-        status bar rather than raised over the results the user is looking at.
+        Unauthenticated runs (without log in) are NOT recorded into the database.
         """
-        if self._catalog is None or self._last_request is None:
+        if (
+            self._catalog is None
+            or self._last_request is None
+            or self._current_user is None
+            or self._current_user.id is None
+        ):
             return
 
         request = self._last_request
@@ -998,10 +1001,10 @@ class MainWindow(QMainWindow):
         self._history_tab.refresh()
 
     def _show_history(self) -> None:
-        """Bring the History tab to the front and reload it."""
+        """Bring the History tab to the front and reload user-specific history."""
         if self._catalog is None or self._current_user is None:
             return
-        self._history_tab.refresh()
+        self._history_tab.set_current_user(self._current_user)
         self._set_history_visible(True)
         self._results_stack.setCurrentIndex(1)
         index = self._results_tabs.indexOf(self._history_tab)
