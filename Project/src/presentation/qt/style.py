@@ -106,6 +106,36 @@ QWidget {
 QMainWindow, QWidget#centralWidget, QDialog {
     background-color: $page;
 }
+QMainWindow {
+    border: 1px solid $border_strong;
+}
+
+/* ---------- Custom title bar ---------- */
+QWidget#titleBar {
+    background-color: $surface;
+}
+QLabel#titleBarLabel {
+    color: $text;
+    font-weight: 600;
+    font-size: 13px;
+}
+QPushButton#titleBarMinButton,
+QPushButton#titleBarMaxButton,
+QPushButton#titleBarCloseButton {
+    background: transparent;
+    border: none;
+    color: $text_secondary;
+    font-size: 14px;
+}
+QPushButton#titleBarMinButton:hover,
+QPushButton#titleBarMaxButton:hover {
+    background-color: $surface_alt;
+    color: $text;
+}
+QPushButton#titleBarCloseButton:hover {
+    background-color: $danger;
+    color: #ffffff;
+}
 
 /* ---------- Header / brand ---------- */
 QLabel#brandMark {
