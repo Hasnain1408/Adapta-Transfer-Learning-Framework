@@ -52,6 +52,7 @@ DARK_PALETTE: dict[str, str] = {
     "metric_pink": "#f472b6",
     # Overlay surfaces
     "tooltip_bg": "#05070a",
+    "tooltip_text": "#eaeff5",
 }
 
 LIGHT_PALETTE: dict[str, str] = {
@@ -85,6 +86,7 @@ LIGHT_PALETTE: dict[str, str] = {
     "metric_pink": "#d1478f",
     # Overlay surfaces
     "tooltip_bg": "#171d26",
+    "tooltip_text": "#eaeff5",
 }
 
 #: Default/back-compat export — prefer ``DARK_PALETTE`` / ``LIGHT_PALETTE`` and
@@ -636,11 +638,64 @@ QScrollBar::add-page, QScrollBar::sub-page {
 /* ---------- Tooltips ---------- */
 QToolTip {
     background-color: $tooltip_bg;
-    color: $text;
+    color: $tooltip_text;
     border: 1px solid $border_strong;
     border-radius: 5px;
     padding: 6px 9px;
     font-size: 12px;
+}
+
+/* ---------- File picker dialog (dataset selection) ---------- */
+/* The QFileDialog's internal widgets do not inherit QSS rules targeted at
+   the rest of the app, so they fall back to the platform's light grey. */
+QFileDialog QToolButton {
+    background-color: $surface_alt;
+    border: 1px solid $border_strong;
+    border-radius: 5px;
+    padding: 4px;
+}
+QFileDialog QToolButton:hover {
+    background-color: $surface;
+    border-color: $text_muted;
+}
+QFileDialog QToolButton:pressed {
+    background-color: $surface_sunken;
+}
+QFileDialog QToolButton:disabled {
+    background-color: $surface_sunken;
+    border-color: $border;
+}
+QFileDialog QStackedWidget,
+QFileDialog QSplitter,
+QFileDialog QFrame,
+QFileDialog QDialogButtonBox,
+QFileDialog QSizeGrip {
+    background-color: $surface;
+}
+QFileDialog QListView,
+QFileDialog QTreeView {
+    background-color: $surface;
+    border: none;
+    color: $text;
+}
+QFileDialog QListView::item,
+QFileDialog QTreeView::item {
+    padding: 4px 6px;
+    border: none;
+}
+QFileDialog QListView::item:hover,
+QFileDialog QTreeView::item:hover {
+    background-color: $surface_alt;
+}
+QFileDialog QListView::item:selected,
+QFileDialog QTreeView::item:selected {
+    background-color: $accent_soft;
+    color: $accent;
+}
+QComboBoxPrivateContainer {
+    background-color: $surface_alt;
+    border: 1px solid $border_strong;
+    border-radius: 7px;
 }
 """
 )
