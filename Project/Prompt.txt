@@ -1,0 +1,54 @@
+1.
+The system run transfer learning on source and target data; measure accuracy, precision, recall, F1-score. Now before calculating measurement metrics, I want to show the target label predictions (sample name -> predicted labels in this format) and the actual target in the same format. Also measure total samples size, number of correct predictions, number of wrong predictions. In the predicted target, append two columns: actual label (label in the actual target data),prediction ( weather the prediction is right or wrong)
+
+2.
+For each transfer learning method, I want to set normalization, standardization and kernel type manually. In the UI, there will be dropdown box for normalization, standardization and kernel type. For normalization, the type will be:
+Min-Max Normalization
+Z-score Standardization
+Robust Standardization
+L1 normalization
+L2 (Unit Vector) Normalization
+Mean Centering
+Column-wise unit norm
+Row-wise unit norm
+Frobenius normalization
+Spectral normalization
+
+For Standardization, the type will be:
+Z-score Standardization
+Robust Standardization
+Mahalanobis Standardization
+Variance Scaling
+Column mean centering
+Row mean centering
+
+Kernel type will be:
+primal
+linear
+RBF kernel
+
+Now update the code to update UI and to implement these normalization, standardization and kernel type
+
+3.
+For now, the system has no database model. Your task is to create database for the system. there will be 4 tables
+User (id, name, email, role - teacher, researcher, student, admin)
+Experiment (id, user_id, source_domain, target_domain, tl_algorithm, classifier, normalization_type, standardization_type,
+		date, status, latant_feature, hyperperameter- regularization_value, kernel_type)
+		
+Dataset (id, name, format - .csv, xlsx, .mat, number of sample, number of features, feature name, lebel name, number of class, class name)
+Evalution (id, experiment_id, accuracy, precision, recall, f1-score)
+
+integrate the database to system, implement all the functionalities.
+
+4.
+The system can take one file as source and one as target. I want batch processing where I will provide multiple files at a time, 
+system will automatically assign source and target from the files through combination (a, b, c => a->b, a->c, b->a, b->c etc), 
+I will not manually assign source target, I will observe result for all pairs. All the configuratoin (normalization, standardization,
+kernel type, regularization etc) will be applied to all pairs. Result will be shown individually for all pairs and also show average 
+for the batch.
+now implement this
+
+
+
+
+
