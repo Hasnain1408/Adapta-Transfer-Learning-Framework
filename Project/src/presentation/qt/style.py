@@ -23,10 +23,10 @@ _ASSETS = (Path(__file__).parent / "assets").as_posix()
 
 DARK_PALETTE: dict[str, str] = {
     # Surfaces
-    "page": "#0c1016",
-    "surface": "#151b24",
-    "surface_alt": "#1b222d",
-    "surface_sunken": "#0f141b",
+    "page": "#202730", #"#292322",
+    "surface": "#2A313B",
+    "surface_alt": "#2A303D",
+    "surface_sunken": "#2A303D",
     # Borders
     "border": "#262f3b",
     "border_strong": "#38424f",
@@ -36,7 +36,7 @@ DARK_PALETTE: dict[str, str] = {
     "text_muted": "#6b7787",
     "text_disabled": "#454e5b",
     # Accent (teal)
-    "accent": "#17b8a6",
+    "accent": "#2da798",
     "accent_hover": "#14a394",
     "accent_pressed": "#108a7d",
     "accent_soft": "#12332f",
@@ -57,8 +57,8 @@ DARK_PALETTE: dict[str, str] = {
 
 LIGHT_PALETTE: dict[str, str] = {
     # Surfaces
-    "page": "#f2f4f8",
-    "surface": "#ffffff",
+    "page": "#dfe4ec",
+    "surface": "#fffdfd",
     "surface_alt": "#f0f2f7",
     "surface_sunken": "#e7eaf1",
     # Borders
@@ -496,6 +496,28 @@ QHeaderView::section:last {
 QTableCornerButton::section {
     background-color: $surface_sunken;
     border: none;
+}
+
+/* ---------- List widgets (batch dataset file list) ---------- */
+QListWidget {
+    background-color: $surface;
+    alternate-background-color: $surface_alt;
+    border: 1px solid $border_strong;
+    border-radius: 7px;
+    color: $text;
+    outline: none;
+    padding: 4px;
+}
+QListWidget::item {
+    padding: 5px 8px;
+    border: none;
+}
+QListWidget::item:hover {
+    background-color: $surface_alt;
+}
+QListWidget::item:selected {
+    background-color: $accent_soft;
+    color: $accent;
 }
 
 /* ---------- Check box ---------- */
