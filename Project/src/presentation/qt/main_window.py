@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -40,13 +41,19 @@ from application.authentication_use_case import AuthenticationUseCase
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
 from domain.entities import ExperimentRecord, User, UserRole
-from domain.models import EvaluationMetrics, TransferLearningRequest, TransferLearningResult
+from domain.models import (
+    BatchTransferLearningRequest,
+    BatchTransferLearningResult,
+    EvaluationMetrics,
+    TransferLearningRequest,
+    TransferLearningResult,
+)
 from presentation.qt.auth_dialogs import AuthDialog
 from presentation.qt.charts_widget import AnalyticsChartsWidget
 from presentation.qt.database_dialogs import DatasetRegistryDialog, UserManagerDialog
 from presentation.qt.history_tab import HistoryTab
 from presentation.qt.style import DARK_PALETTE, LIGHT_PALETTE, build_style_sheet
-from presentation.qt.worker import TransferLearningWorker
+from presentation.qt.worker import BatchTransferLearningWorker, TransferLearningWorker
 
 #: ``(display label, value)``. The value is what the use case dispatches on, so
 #: labels can be reworded without silently disabling a transform.
@@ -283,9 +290,11 @@ class MainWindow(QMainWindow):
         self._auth = auth
         self._database_error = database_error
         self._current_user = current_user
-        self._worker: TransferLearningWorker | None = None
+        self._worker: TransferLearningWorker | BatchTransferLearningWorker | None = None
         self._last_result: TransferLearningResult | None = None
         self._last_request: TransferLearningRequest | None = None
+        self._last_batch_result: BatchTransferLearningResult | None = None
+        self._batch_results_tab_index = -1
         self._theme = "dark"
         self._palette = DARK_PALETTE
         self._status_key = "neutral"
@@ -328,6 +337,30 @@ class MainWindow(QMainWindow):
         self._swap_button.setObjectName("swapButton")
         self._swap_button.setToolTip("Swap Source and Target dataset paths (Ctrl+Shift+S)")
         self._swap_button.setCursor(Qt.PointingHandCursor)
+
+        self._batch_mode_check = QCheckBox("Batch mode — run every ordered pair from multiple files")
+        self._batch_mode_check.setToolTip(
+            "Pick 2+ files; every ordered pair (A→B, A→C, B→A, ...) is run with "
+            "the same method and configuration."
+        )
+
+        self._batch_files_list = QListWidget()
+        self._batch_files_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self._batch_files_list.setToolTip("Files included in the batch")
+        self._batch_files_list.setMaximumHeight(110)
+
+        self._add_batch_files_button = QPushButton("Add Files…")
+        self._remove_batch_file_button = QPushButton("Remove Selected")
+        self._clear_batch_files_button = QPushButton("Clear All")
+        for button in (
+            self._add_batch_files_button,
+            self._remove_batch_file_button,
+            self._clear_batch_files_button,
+        ):
+            button.setCursor(Qt.PointingHandCursor)
+
+        self._batch_files_caption = QLabel("Add 2+ files to enable batch mode.")
+        self._batch_files_caption.setObjectName("captionLabel")
 
         self._method_combo = QComboBox()
         for name in self._use_case.method_names:
@@ -430,6 +463,41 @@ class MainWindow(QMainWindow):
         self._features_caption = QLabel()
         self._features_caption.setObjectName("captionLabel")
         self._features_caption.hide()
+
+        self._batch_results_table = self._build_table(
+            [
+                "Source",
+                "Target",
+                "Status",
+                "Accuracy",
+                "Precision",
+                "Recall",
+                "F1 Score",
+                "Samples",
+                "Correct",
+                "Wrong",
+            ]
+        )
+        self._align_headers(
+            self._batch_results_table,
+            [
+                Qt.AlignLeft,
+                Qt.AlignLeft,
+                Qt.AlignCenter,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignRight,
+            ],
+        )
+        self._batch_summary_label = QLabel(
+            "Run a batch to see per-pair results and the average across the batch."
+        )
+        self._batch_summary_label.setObjectName("captionLabel")
+        self._batch_summary_label.setWordWrap(True)
 
         # Owner of any experiment recorded from now on — the account that
         # authenticated through AuthDialog before this window was built.
@@ -619,7 +687,27 @@ class MainWindow(QMainWindow):
 
     def _build_dataset_group(self) -> QGroupBox:
         group = QGroupBox("Datasets")
-        grid = QGridLayout(group)
+        outer = QVBoxLayout(group)
+        outer.setSpacing(10)
+
+        outer.addWidget(self._batch_mode_check)
+
+        self._single_dataset_widget = self._build_single_dataset_widget()
+        self._batch_dataset_widget = self._build_batch_dataset_widget()
+        outer.addWidget(self._single_dataset_widget)
+        outer.addWidget(self._batch_dataset_widget)
+        self._batch_dataset_widget.setVisible(False)
+
+        hint = QLabel("Accepted formats: CSV, XLSX (last column is the label) and MATLAB .mat")
+        hint.setObjectName("captionLabel")
+        outer.addWidget(hint)
+
+        return group
+
+    def _build_single_dataset_widget(self) -> QWidget:
+        widget = QWidget()
+        grid = QGridLayout(widget)
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(10)
         grid.setColumnStretch(1, 1)
@@ -633,12 +721,24 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._browse_target_button, 1, 2)
 
         grid.addWidget(self._swap_button, 0, 3, 2, 1, Qt.AlignVCenter)
+        return widget
 
-        hint = QLabel("Accepted formats: CSV, XLSX (last column is the label) and MATLAB .mat")
-        hint.setObjectName("captionLabel")
-        grid.addWidget(hint, 2, 1, 1, 3)
+    def _build_batch_dataset_widget(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
-        return group
+        button_row = QHBoxLayout()
+        button_row.addWidget(self._add_batch_files_button)
+        button_row.addWidget(self._remove_batch_file_button)
+        button_row.addWidget(self._clear_batch_files_button)
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+
+        layout.addWidget(self._batch_files_list)
+        layout.addWidget(self._batch_files_caption)
+        return widget
 
     def _build_parameter_group(self) -> QGroupBox:
         group = QGroupBox("Method and Parameters")
@@ -767,6 +867,13 @@ class MainWindow(QMainWindow):
         summary_layout.addWidget(self._summary_table)
         summary_layout.addStretch(1)
 
+        batch_page = QWidget()
+        batch_layout = QVBoxLayout(batch_page)
+        batch_layout.setContentsMargins(12, 10, 12, 12)
+        batch_layout.setSpacing(8)
+        batch_layout.addWidget(self._batch_summary_label)
+        batch_layout.addWidget(self._batch_results_table, 1)
+
         self._charts_widget = AnalyticsChartsWidget(self._palette)
         self._history_tab = HistoryTab(self._catalog, self._palette)
 
@@ -774,7 +881,9 @@ class MainWindow(QMainWindow):
         self._results_tabs.addTab(self._charts_widget, "Visualizations")
         self._results_tabs.addTab(features_page, "Transformed Features")
         self._results_tabs.addTab(summary_page, "Dataset Summary")
+        self._results_tabs.addTab(batch_page, "Batch Results")
         self._results_tabs.addTab(self._history_tab, "History")
+        self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
         self._history_tab_index = self._results_tabs.indexOf(self._history_tab)
         self._set_history_visible(self._current_user is not None)
         return self._results_tabs
@@ -809,6 +918,10 @@ class MainWindow(QMainWindow):
         self._source_input.clicked.connect(self._pick_source)
         self._target_input.clicked.connect(self._pick_target)
         self._swap_button.clicked.connect(self._swap_datasets)
+        self._batch_mode_check.toggled.connect(self._on_batch_mode_toggled)
+        self._add_batch_files_button.clicked.connect(self._add_batch_files)
+        self._remove_batch_file_button.clicked.connect(self._remove_selected_batch_files)
+        self._clear_batch_files_button.clicked.connect(self._clear_batch_files)
         self._run_button.clicked.connect(self._run_transfer_learning)
         self._export_button.clicked.connect(self._export_pdf_report)
 
@@ -1163,6 +1276,47 @@ class MainWindow(QMainWindow):
         if file_path:
             target_input.setText(file_path)
 
+    # ------------------------------------------------------------------
+    # Batch mode
+    # ------------------------------------------------------------------
+    def _on_batch_mode_toggled(self, checked: bool) -> None:
+        self._single_dataset_widget.setVisible(not checked)
+        self._batch_dataset_widget.setVisible(checked)
+        self._run_button.setText("Run Batch" if checked else "Run Experiment")
+
+    def _add_batch_files(self) -> None:
+        start_dir = str(Path.cwd())
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, "Select Dataset Files", start_dir, DATASET_FILTER
+        )
+        existing = {
+            self._batch_files_list.item(i).text() for i in range(self._batch_files_list.count())
+        }
+        for path in file_paths:
+            if path not in existing:
+                self._batch_files_list.addItem(path)
+                existing.add(path)
+        self._update_batch_caption()
+
+    def _remove_selected_batch_files(self) -> None:
+        for item in self._batch_files_list.selectedItems():
+            self._batch_files_list.takeItem(self._batch_files_list.row(item))
+        self._update_batch_caption()
+
+    def _clear_batch_files(self) -> None:
+        self._batch_files_list.clear()
+        self._update_batch_caption()
+
+    def _update_batch_caption(self) -> None:
+        count = self._batch_files_list.count()
+        if count < 2:
+            self._batch_files_caption.setText("Add 2+ files to enable batch mode.")
+        else:
+            pair_count = count * (count - 1)
+            self._batch_files_caption.setText(
+                f"{count} files selected → {pair_count} ordered pairs will be run."
+            )
+
     def _run_transfer_learning(self) -> None:
         # Guard against a stale reference: once the C++ QThread is deleted by
         # deleteLater the Python wrapper raises RuntimeError on any method call.
@@ -1173,6 +1327,12 @@ class MainWindow(QMainWindow):
             # C++ object already deleted – treat it as "not running".
             self._worker = None
 
+        if self._batch_mode_check.isChecked():
+            self._run_batch_experiment()
+        else:
+            self._run_single_experiment()
+
+    def _run_single_experiment(self) -> None:
         source_path = self._source_input.text().strip()
         target_path = self._target_input.text().strip()
 
@@ -1223,11 +1383,62 @@ class MainWindow(QMainWindow):
         self._worker.finished.connect(self._worker.deleteLater)
         self._worker.start()
 
+    def _run_batch_experiment(self) -> None:
+        file_paths = [
+            self._batch_files_list.item(i).text() for i in range(self._batch_files_list.count())
+        ]
+
+        if len(file_paths) < 2:
+            QMessageBox.warning(
+                self,
+                "Not Enough Files",
+                "Add at least two dataset files to run a batch.",
+            )
+            return
+
+        missing = [p for p in file_paths if not Path(p).is_file()]
+        if missing:
+            QMessageBox.warning(
+                self,
+                "Dataset Not Found",
+                "The following path is not a readable file:\n\n" + "\n".join(missing),
+            )
+            return
+
+        request = BatchTransferLearningRequest(
+            method_name=self._method_combo.currentText(),
+            file_paths=file_paths,
+            normalization=self._norm_combo.currentData(),
+            standardization=self._std_combo.currentData(),
+            kernel_type=self._kernel_combo.currentData(),
+            regularization=self._reg_input.value(),
+            latent_dim=self._dim_input.value(),
+            classifier=self._classifier_combo.currentData(),
+        )
+
+        pair_count = len(file_paths) * (len(file_paths) - 1)
+        self._set_running(True)
+        self._set_status(f"Running batch ({pair_count} pairs)…", "warning")
+
+        self._worker = BatchTransferLearningWorker(self._use_case, request)
+        self._worker.succeeded.connect(self._on_batch_success)
+        self._worker.failed.connect(self._on_batch_error)
+        self._worker.finished.connect(lambda: self._set_running(False))
+        self._worker.finished.connect(lambda: setattr(self, "_worker", None))
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.start()
+
     def _set_running(self, running: bool) -> None:
         self._run_button.setEnabled(not running)
         self._run_action.setEnabled(not running)
-        self._run_button.setText("Running…" if running else "Run Experiment")
+        running_label = "Running…"
+        idle_label = "Run Batch" if self._batch_mode_check.isChecked() else "Run Experiment"
+        self._run_button.setText(running_label if running else idle_label)
         self._progress_bar.setVisible(running)
+        self._batch_mode_check.setEnabled(not running)
+        self._add_batch_files_button.setEnabled(not running)
+        self._remove_batch_file_button.setEnabled(not running)
+        self._clear_batch_files_button.setEnabled(not running)
 
     def _on_success(self, result: TransferLearningResult) -> None:
         self._last_result = result
@@ -1256,6 +1467,110 @@ class MainWindow(QMainWindow):
         box.setText("The transfer learning run could not be completed.")
         box.setInformativeText(message)
         box.exec_()
+
+    def _on_batch_success(self, batch_result: BatchTransferLearningResult) -> None:
+        self._last_batch_result = batch_result
+        succeeded = sum(1 for pair in batch_result.pairs if pair.result is not None)
+        failed = len(batch_result.pairs) - succeeded
+        status = "Batch completed" if failed == 0 else f"Batch completed ({failed} pair(s) failed)"
+        self._set_status(status, "success" if failed == 0 else "warning")
+
+        # A single PDF report only makes sense for one pair — disable export
+        # rather than have it silently describe a stale single-pair result.
+        self._export_button.setEnabled(False)
+        self._export_action.setEnabled(False)
+
+        # Metric cards show the batch-wide average, matching the summary
+        # line on the Batch Results tab.
+        self._show_metrics(batch_result.average_metrics)
+        if batch_result.average_metrics is not None:
+            evaluable = sum(
+                1 for pair in batch_result.pairs if pair.result is not None and pair.result.metrics is not None
+            )
+            self._counts_label.setText(
+                f"Average over {evaluable} of {len(batch_result.pairs)} pairs  ·  "
+                f"{batch_result.average_metrics.total_samples} target samples evaluated in total  ·  "
+                f"{batch_result.average_metrics.correct_predictions} correct  ·  "
+                f"{batch_result.average_metrics.wrong_predictions} incorrect"
+            )
+
+        self._populate_batch_results(batch_result)
+        self._results_stack.setCurrentIndex(1)
+        if self._batch_results_tab_index >= 0:
+            self._results_tabs.setCurrentIndex(self._batch_results_tab_index)
+
+    def _on_batch_error(self, message: str) -> None:
+        self._set_status("Batch Failed", "danger")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Critical)
+        box.setWindowTitle("Batch Run Failed")
+        box.setText("The batch run could not be completed.")
+        box.setInformativeText(message)
+        box.exec_()
+
+    def _populate_batch_results(self, batch_result: BatchTransferLearningResult) -> None:
+        table = self._batch_results_table
+        table.setRowCount(len(batch_result.pairs))
+
+        success_brush = QBrush(QColor(self._palette["success"]))
+        danger_brush = QBrush(QColor(self._palette["danger"]))
+        succeeded = 0
+
+        for row, pair in enumerate(batch_result.pairs):
+            source_name = Path(pair.source_path).name
+            target_name = Path(pair.target_path).name
+            metrics = pair.result.metrics if pair.result is not None else None
+
+            if metrics is not None:
+                succeeded += 1
+                status_text, status_brush = "OK", success_brush
+                values = [
+                    f"{metrics.accuracy:.4f}",
+                    f"{metrics.precision:.4f}",
+                    f"{metrics.recall:.4f}",
+                    f"{metrics.f1_score:.4f}",
+                    str(metrics.total_samples),
+                    str(metrics.correct_predictions),
+                    str(metrics.wrong_predictions),
+                ]
+            elif pair.result is not None:
+                status_text, status_brush = "No labels", None
+                values = ["—"] * 7
+            else:
+                status_text, status_brush = "Error", danger_brush
+                values = [pair.error or "Unknown error"] + [""] * 6
+
+            cells = [source_name, target_name, status_text, *values]
+            for column, value in enumerate(cells):
+                item = QTableWidgetItem(value)
+                if column >= 2:
+                    item.setTextAlignment(Qt.AlignCenter if column == 2 else Qt.AlignRight | Qt.AlignVCenter)
+                if column == 2 and status_brush is not None:
+                    item.setForeground(status_brush)
+                if column == 3 and status_text == "Error":
+                    item.setToolTip(pair.error or "")
+                table.setItem(row, column, item)
+
+        header = table.horizontalHeader()
+        for column in range(2):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        for column in range(2, 10):
+            header.setSectionResizeMode(column, QHeaderView.Stretch)
+
+        total = len(batch_result.pairs)
+        avg = batch_result.average_metrics
+        if avg is not None:
+            self._batch_summary_label.setText(
+                f"{total} pairs run — {succeeded} produced metrics, {total - succeeded} did not. "
+                f"Average over evaluable pairs: accuracy {avg.accuracy:.4f} | "
+                f"precision {avg.precision:.4f} | recall {avg.recall:.4f} | f1 {avg.f1_score:.4f} "
+                f"({avg.correct_predictions}/{avg.total_samples} correct)"
+            )
+        else:
+            self._batch_summary_label.setText(
+                f"{total} pairs run — no pair produced evaluable metrics "
+                "(datasets may be missing labels, or every pair failed)."
+            )
 
     def _show_about(self) -> None:
         QMessageBox.about(
