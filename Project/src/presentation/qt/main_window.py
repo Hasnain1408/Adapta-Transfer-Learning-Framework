@@ -4,8 +4,8 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QKeySequence, QTextDocument
+from PyQt5.QtCore import QEvent, Qt, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QIcon, QKeySequence, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -54,6 +54,7 @@ from presentation.qt.charts_widget import AnalyticsChartsWidget
 from presentation.qt.database_dialogs import DatasetRegistryDialog, UserManagerDialog
 from presentation.qt.history_tab import HistoryTab
 from presentation.qt.style import DARK_PALETTE, LIGHT_PALETTE, build_style_sheet
+from presentation.qt.title_bar import TitleBar
 from presentation.qt.worker import BatchTransferLearningWorker, TransferLearningWorker
 
 #: ``(display label, value)``. The value is what the use case dispatches on, so
@@ -320,12 +321,15 @@ class MainWindow(QMainWindow):
         self._history_tab_index = -1
 
         self.setWindowTitle("Adapta: Transfer Learning Studio")
+        self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets" / "app_icon.svg")))
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setMinimumSize(1000, 720)
         self.resize(1180, 820)
         self._apply_theme_stylesheet()
 
         self._build_widgets()
         self._build_menu()
+        self._build_title_bar()
         self._build_layout()
         self._build_status_bar()
         self._connect_signals()
@@ -629,6 +633,30 @@ class MainWindow(QMainWindow):
         help_menu.addSeparator()
         help_menu.addAction(self._about_action)
 
+    def _build_title_bar(self) -> None:
+        """Stack a custom title bar above the real menu bar.
+
+        The window is frameless, so ``TitleBar`` stands in for the OS
+        decoration. ``QMainWindow.setMenuWidget`` accepts any widget as the
+        menu-bar area, so the existing ``self.menuBar()`` is nested inside a
+        small container alongside it rather than rebuilt.
+        """
+        self._title_bar = TitleBar(self, "Adapta: Transfer Learning Studio")
+
+        container = QWidget()
+        container.setObjectName("titleBarContainer")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._title_bar)
+        layout.addWidget(self.menuBar())
+        self.setMenuWidget(container)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange:
+            self._title_bar.refresh_maximize_glyph()
+
     def _build_layout(self) -> None:
         central = QWidget(self)
         central.setObjectName("centralWidget")
@@ -657,18 +685,18 @@ class MainWindow(QMainWindow):
         mark.setObjectName("brandMark")
         mark.setFixedSize(34, 34)
 
-        title_box = QVBoxLayout()
-        title_box.setContentsMargins(0, 0, 0, 0)
-        title_box.setSpacing(0)
-        title = QLabel("Adapta: Transfer Learning Studio")
-        title.setObjectName("appTitle")
-        subtitle = QLabel("Domain adaptation experiment workbench")
-        subtitle.setObjectName("appSubtitle")
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
+        # title_box = QVBoxLayout()
+        # title_box.setContentsMargins(0, 0, 0, 0)
+        # title_box.setSpacing(0)
+        # title = QLabel("Adapta: Transfer Learning Studio")
+        # title.setObjectName("appTitle")
+        # subtitle = QLabel("Domain adaptation experiment workbench")
+        # subtitle.setObjectName("appSubtitle")
+        # title_box.addWidget(title)
+        # title_box.addWidget(subtitle)
 
-        layout.addWidget(mark)
-        layout.addLayout(title_box)
+        # layout.addWidget(mark)
+        # layout.addLayout(title_box)
         layout.addStretch(1)
         layout.addWidget(self._user_label)
         layout.addWidget(self._logout_button)
