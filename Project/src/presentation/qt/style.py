@@ -106,8 +106,13 @@ QWidget {
 QMainWindow, QWidget#centralWidget, QDialog {
     background-color: $page;
 }
-QMainWindow {
+QMainWindow, QDialog {
     border: 1px solid $border_strong;
+}
+QWidget#authCard {
+    background-color: $surface;
+    border: 1px solid $border;
+    border-radius: 12px;
 }
 
 /* ---------- Custom title bar ---------- */
@@ -344,22 +349,6 @@ QPushButton#fullscreenButton:disabled {
     background-color: $surface_sunken;
     border-color: $border;
     color: $text_disabled;
-}
-QPushButton#fullscreenCloseButton {
-    background-color: $surface_alt;
-    border: 1px solid $border_strong;
-    color: $text_secondary;
-    padding: 6px 14px;
-}
-QPushButton#fullscreenCloseButton:hover {
-    background-color: $surface_sunken;
-    border-color: $text_muted;
-    color: $text;
-}
-QLabel#fullscreenTitleLabel {
-    color: $text;
-    font-size: 16px;
-    font-weight: 600;
 }
 QPushButton#swapButton {
     background-color: $surface_alt;
