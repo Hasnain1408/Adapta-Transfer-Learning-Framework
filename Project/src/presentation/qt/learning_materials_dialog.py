@@ -10,7 +10,6 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QPushButton,
     QSplitter,
     QStackedWidget,
     QTabWidget,
@@ -20,6 +19,7 @@ from PyQt5.QtWidgets import (
 )
 
 from presentation.qt.style import build_style_sheet
+from presentation.qt.title_bar import install_title_bar
 
 
 class LearningMaterialsDialog(QDialog):
@@ -51,7 +51,8 @@ class LearningMaterialsDialog(QDialog):
                 list_widget.setCurrentRow(item_index)
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        body = QWidget()
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(12)
 
@@ -72,12 +73,6 @@ class LearningMaterialsDialog(QDialog):
 
         header_layout.addLayout(title_box)
         header_layout.addStretch(1)
-
-        close_btn = QPushButton("✕ Close")
-        close_btn.setObjectName("fullscreenCloseButton")
-        close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.clicked.connect(self.accept)
-        header_layout.addWidget(close_btn)
 
         layout.addWidget(header)
 
@@ -102,6 +97,8 @@ class LearningMaterialsDialog(QDialog):
             self._category_browsers.append(browser)
 
         layout.addWidget(self._tabs, 1)
+
+        install_title_bar(self, "Learning Materials & Domain Adaptation Guide", body)
 
     def _build_category_tab(
         self, items: list[tuple[str, str]]
