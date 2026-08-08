@@ -76,6 +76,8 @@ def _to_dataset(row: dict[str, Any]) -> DatasetRecord:
         label_name=row.get("label_name") or "",
         num_classes=row.get("num_classes") or 0,
         class_names=_as_list(row.get("class_names")),
+        dtype_summary=row.get("dtype_summary") or "",
+        missing_value_count=row.get("missing_value_count") or 0,
         source_path=row.get("source_path") or "",
         created_at=row.get("created_at"),
     )
@@ -226,9 +228,10 @@ class PostgresDatasetRepository:
                 """
                 INSERT INTO datasets (
                     name, file_format, num_samples, num_features,
-                    feature_names, label_name, num_classes, class_names, source_path
+                    feature_names, label_name, num_classes, class_names,
+                    dtype_summary, missing_value_count, source_path
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -240,6 +243,8 @@ class PostgresDatasetRepository:
                     dataset.label_name,
                     dataset.num_classes,
                     list(dataset.class_names),
+                    dataset.dtype_summary,
+                    dataset.missing_value_count,
                     dataset.source_path,
                 ),
             )
@@ -263,18 +268,21 @@ class PostgresDatasetRepository:
             """
             INSERT INTO datasets (
                 name, file_format, num_samples, num_features,
-                feature_names, label_name, num_classes, class_names, source_path
+                feature_names, label_name, num_classes, class_names,
+                dtype_summary, missing_value_count, source_path
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (source_path) DO UPDATE SET
-                name          = EXCLUDED.name,
-                file_format   = EXCLUDED.file_format,
-                num_samples   = EXCLUDED.num_samples,
-                num_features  = EXCLUDED.num_features,
-                feature_names = EXCLUDED.feature_names,
-                label_name    = EXCLUDED.label_name,
-                num_classes   = EXCLUDED.num_classes,
-                class_names   = EXCLUDED.class_names
+                name                 = EXCLUDED.name,
+                file_format          = EXCLUDED.file_format,
+                num_samples          = EXCLUDED.num_samples,
+                num_features         = EXCLUDED.num_features,
+                feature_names        = EXCLUDED.feature_names,
+                label_name           = EXCLUDED.label_name,
+                num_classes          = EXCLUDED.num_classes,
+                class_names          = EXCLUDED.class_names,
+                dtype_summary        = EXCLUDED.dtype_summary,
+                missing_value_count  = EXCLUDED.missing_value_count
             RETURNING *
             """,
             (
@@ -286,6 +294,8 @@ class PostgresDatasetRepository:
                 dataset.label_name,
                 dataset.num_classes,
                 list(dataset.class_names),
+                dataset.dtype_summary,
+                dataset.missing_value_count,
                 dataset.source_path,
             ),
         )
@@ -300,7 +310,8 @@ class PostgresDatasetRepository:
             UPDATE datasets
                SET name = %s, file_format = %s, num_samples = %s, num_features = %s,
                    feature_names = %s, label_name = %s, num_classes = %s,
-                   class_names = %s, source_path = %s
+                   class_names = %s, dtype_summary = %s, missing_value_count = %s,
+                   source_path = %s
              WHERE id = %s
             RETURNING *
             """,
@@ -313,6 +324,8 @@ class PostgresDatasetRepository:
                 dataset.label_name,
                 dataset.num_classes,
                 list(dataset.class_names),
+                dataset.dtype_summary,
+                dataset.missing_value_count,
                 dataset.source_path,
                 dataset.id,
             ),

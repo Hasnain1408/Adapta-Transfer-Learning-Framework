@@ -4,12 +4,13 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QKeySequence, QTextDocument
+from PyQt5.QtCore import QEvent, Qt, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QIcon, QKeySequence, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QAction,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -32,6 +33,7 @@ from PyQt5.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabBar,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -40,7 +42,7 @@ from PyQt5.QtWidgets import (
 from application.authentication_use_case import AuthenticationUseCase
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
-from domain.entities import ExperimentRecord, User, UserRole
+from domain.entities import ExperimentHistoryEntry, ExperimentRecord, User, UserRole
 from domain.models import (
     BatchTransferLearningRequest,
     BatchTransferLearningResult,
@@ -51,8 +53,12 @@ from domain.models import (
 from presentation.qt.auth_dialogs import AuthDialog
 from presentation.qt.charts_widget import AnalyticsChartsWidget
 from presentation.qt.database_dialogs import DatasetRegistryDialog, UserManagerDialog
+from presentation.qt.experiment_detail_view import ExperimentDetailView
 from presentation.qt.history_tab import HistoryTab
+from presentation.qt.metric_card import MetricCard
+from presentation.qt import message_box
 from presentation.qt.style import DARK_PALETTE, LIGHT_PALETTE, build_style_sheet
+from presentation.qt.title_bar import TitleBar, install_title_bar_on_grid
 from presentation.qt.worker import BatchTransferLearningWorker, TransferLearningWorker
 
 #: ``(display label, value)``. The value is what the use case dispatches on, so
@@ -106,6 +112,25 @@ DATASET_FILTER = (
 FEATURE_PREVIEW_ROWS = 1000
 
 
+def _dataset_class_names(labels) -> list[str]:
+    """Distinct label values, sorted, as strings — mirrors the catalogue's
+    own class-name derivation so the Dataset Summary tab and Dataset
+    Registry agree on what "classes" means for the same file."""
+    if labels is None:
+        return []
+    return sorted({str(value) for value in labels})
+
+
+def _dataset_dtype_summary(dtypes: list[str]) -> str:
+    """Compact ``"float64 x24, int64 x2"``-style summary for a table cell."""
+    if not dtypes:
+        return ""
+    counts: dict[str, int] = {}
+    for dtype in dtypes:
+        counts[dtype] = counts.get(dtype, 0) + 1
+    return ", ".join(f"{dtype} x{count}" for dtype, count in counts.items())
+
+
 class _ClickableLineEdit(QLineEdit):
     """Read-only line edit that emits ``clicked`` on any mouse press.
 
@@ -120,148 +145,47 @@ class _ClickableLineEdit(QLineEdit):
         super().mousePressEvent(event)
 
 
-class MetricCard(QFrame):
-    """A single headline metric, shown as a titled value tile.
+class FullScreenViewer(QMainWindow):
+    """Generic standalone window that borrows the results tab widget.
 
-    ``accent`` selects the colour of the card's top border (see the
-    ``QFrame#metricCard[accent=...]`` rules in ``style.py``) so the row of
-    stat cards reads as a set of distinct, colour-coded tiles rather than
-    identical grey boxes.
+    Reparents the actual tab widget in place — it keeps its live state
+    (chart figure, populated table rows, filter checkboxes) and is handed
+    back to its original layout slot when the window closes, so no data has
+    to be duplicated or re-synced.
     """
-
-    def __init__(self, title: str, tooltip: str = "", accent: str = "teal") -> None:
-        super().__init__()
-        self.setObjectName("metricCard")
-        self.setProperty("accent", accent)
-        if tooltip:
-            self.setToolTip(tooltip)
-
-        self._value_label = QLabel("—")
-        self._value_label.setObjectName("metricCardValue")
-        self._value_label.setProperty("placeholder", True)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("metricCardTitle")
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 11)
-        layout.setSpacing(2)
-        layout.addWidget(title_label)
-        layout.addWidget(self._value_label)
-
-    def set_value(self, text: str | None) -> None:
-        is_placeholder = text is None
-        self._value_label.setText("—" if is_placeholder else text)
-        self._value_label.setProperty("placeholder", is_placeholder)
-        # Dynamic properties only affect QSS after a re-polish.
-        self._value_label.style().unpolish(self._value_label)
-        self._value_label.style().polish(self._value_label)
-
-
-class PredictionsWindow(QMainWindow):
-    """Standalone fullscreen window that mirrors the predictions table."""
 
     def __init__(
         self,
-        result: TransferLearningResult,
-        palette: dict[str, str],
+        title: str,
+        content: QWidget,
         stylesheet: str,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._palette = palette
-        self.setWindowTitle("Predictions — Full Screen")
+        self.setWindowTitle(f"{title} — Full Screen")
         self.setMinimumSize(800, 540)
         self.setStyleSheet(stylesheet)
         self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
 
-        # ── Filter bar ──────────────────────────────────────────────────
-        self._incorrect_only = QCheckBox("Show incorrect predictions only")
+        title_bar = TitleBar(self, f"{title} — Full Screen")
 
-        close_btn = QPushButton("✕  Close")
-        close_btn.setObjectName("fullscreenCloseButton")
-        close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.clicked.connect(self.close)
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(18, 14, 18, 14)
+        body_layout.setSpacing(10)
+        body_layout.addWidget(content, 1)
 
-        filter_row = QHBoxLayout()
-        filter_row.setContentsMargins(0, 0, 0, 0)
-        filter_row.setSpacing(10)
-        filter_row.addWidget(self._incorrect_only)
-        filter_row.addStretch(1)
-        filter_row.addWidget(close_btn)
-
-        # ── Predictions table ────────────────────────────────────────────
-        self._table = QTableWidget()
-        self._table.setColumnCount(4)
-        self._table.setHorizontalHeaderLabels(["Sample", "Actual Label", "Predicted Label", "Result"])
-        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._table.setAlternatingRowColors(True)
-        self._table.setShowGrid(False)
-        self._table.setWordWrap(False)
-        self._table.verticalHeader().setVisible(False)
-        self._table.verticalHeader().setDefaultSectionSize(30)
-        self._table.horizontalHeader().setHighlightSections(False)
-        self._table.horizontalHeader().setStretchLastSection(True)
-
-        for col, alignment in enumerate(
-            [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter]
-        ):
-            item = self._table.horizontalHeaderItem(col)
-            if item:
-                item.setTextAlignment(alignment | Qt.AlignVCenter)
-
-        # ── Layout ───────────────────────────────────────────────────────
         container = QWidget()
         container.setObjectName("centralWidget")
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(10)
-        layout.addLayout(filter_row)
-        layout.addWidget(self._table, 1)
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(title_bar)
+        outer.addWidget(body, 1)
         self.setCentralWidget(container)
 
-        self._populate(result)
-        self._incorrect_only.toggled.connect(self._apply_filter)
         self.showMaximized()
-
-    def _populate(self, result: TransferLearningResult) -> None:
-        self._result = result
-        preds = result.target_predictions
-        if preds is None:
-            return
-
-        correct_brush = QBrush(QColor(self._palette["success"]))
-        wrong_brush = QBrush(QColor(self._palette["danger"]))
-
-        self._table.setRowCount(len(preds))
-        for row in range(len(preds)):
-            is_correct = result.prediction_correctness[row] == "Right"
-            cells = [
-                f"Sample {row + 1}",
-                str(result.target_actuals[row]),
-                str(preds[row]),
-                "✓ Correct" if is_correct else "✗ Incorrect",
-            ]
-            for col, value in enumerate(cells):
-                item = QTableWidgetItem(value)
-                if col:
-                    item.setTextAlignment(Qt.AlignCenter)
-                if col == 3:
-                    item.setForeground(correct_brush if is_correct else wrong_brush)
-                self._table.setItem(row, col, item)
-
-        header = self._table.horizontalHeader()
-        for col in range(4):
-            header.setSectionResizeMode(col, QHeaderView.Stretch)
-
-    def _apply_filter(self) -> None:
-        result = self._result
-        if result is None or result.prediction_correctness is None:
-            return
-        incorrect_only = self._incorrect_only.isChecked()
-        for row, correctness in enumerate(result.prediction_correctness):
-            self._table.setRowHidden(row, incorrect_only and correctness == "Right")
 
 
 class MainWindow(QMainWindow):
@@ -299,14 +223,20 @@ class MainWindow(QMainWindow):
         self._palette = DARK_PALETTE
         self._status_key = "neutral"
         self._history_tab_index = -1
+        #: experiment id -> its open detail tab widget, so a second click on
+        #: the same row raises the existing tab instead of duplicating it.
+        self._experiment_detail_tabs: dict[int, ExperimentDetailView] = {}
 
-        self.setWindowTitle("Transfer Learning Studio")
+        self.setWindowTitle("Adapta: Transfer Learning Studio")
+        self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets" / "app_icon.svg")))
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setMinimumSize(1000, 720)
         self.resize(1180, 820)
-        self.setStyleSheet(build_style_sheet(self._palette))
+        self._apply_theme_stylesheet()
 
         self._build_widgets()
         self._build_menu()
+        self._build_title_bar()
         self._build_layout()
         self._build_status_bar()
         self._connect_signals()
@@ -327,11 +257,6 @@ class MainWindow(QMainWindow):
         self._target_input.setClearButtonEnabled(True)
         self._target_input.setReadOnly(True)
         self._target_input.setCursor(Qt.PointingHandCursor)
-
-        self._browse_source_button = QPushButton("Browse…")
-        self._browse_target_button = QPushButton("Browse…")
-        for button in (self._browse_source_button, self._browse_target_button):
-            button.setCursor(Qt.PointingHandCursor)
 
         self._swap_button = QPushButton("⇅ Swap")
         self._swap_button.setObjectName("swapButton")
@@ -404,6 +329,7 @@ class MainWindow(QMainWindow):
         self._run_button.setDefault(True)
 
         self._export_button = QPushButton("Export Report…")
+        self._export_button.setObjectName("runButton")
         self._export_button.setCursor(Qt.PointingHandCursor)
         self._export_button.setEnabled(False)
 
@@ -436,12 +362,12 @@ class MainWindow(QMainWindow):
 
         self._incorrect_only_check = QCheckBox("Show incorrect predictions only")
         self._incorrect_only_check.setEnabled(False)
+        self._correct_only_check = QCheckBox("Show correct predictions only")
+        self._correct_only_check.setEnabled(False)
 
-        self._fullscreen_button = QPushButton("⛶  Full Screen")
-        self._fullscreen_button.setObjectName("fullscreenButton")
-        self._fullscreen_button.setCursor(Qt.PointingHandCursor)
-        self._fullscreen_button.setToolTip("Open predictions in a dedicated full-screen window")
-        self._fullscreen_button.setEnabled(False)
+        self._results_fullscreen_button = self._build_fullscreen_button(
+            "Open the results tabs in a dedicated full-screen window"
+        )
 
         self._predictions_table = self._build_table(
             ["Sample", "Actual Label", "Predicted Label", "Result"]
@@ -452,11 +378,29 @@ class MainWindow(QMainWindow):
         )
         self._features_table = self._build_table([])
         self._summary_table = self._build_table(
-            ["Dataset", "Samples", "Features", "Label Column", "Feature Names"]
+            [
+                "Dataset",
+                "Samples",
+                "Features",
+                "Label Column",
+                "Classes",
+                "Data Types",
+                "Missing Values",
+                "Feature Names",
+            ]
         )
         self._align_headers(
             self._summary_table,
-            [Qt.AlignLeft, Qt.AlignRight, Qt.AlignRight, Qt.AlignLeft, Qt.AlignLeft],
+            [
+                Qt.AlignLeft,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignLeft,
+                Qt.AlignRight,
+                Qt.AlignLeft,
+                Qt.AlignRight,
+                Qt.AlignLeft,
+            ],
         )
         self._summary_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
@@ -612,6 +556,30 @@ class MainWindow(QMainWindow):
         help_menu.addSeparator()
         help_menu.addAction(self._about_action)
 
+    def _build_title_bar(self) -> None:
+        """Stack a custom title bar above the real menu bar.
+
+        The window is frameless, so ``TitleBar`` stands in for the OS
+        decoration. ``QMainWindow.setMenuWidget`` accepts any widget as the
+        menu-bar area, so the existing ``self.menuBar()`` is nested inside a
+        small container alongside it rather than rebuilt.
+        """
+        self._title_bar = TitleBar(self, "Adapta: Transfer Learning Studio")
+
+        container = QWidget()
+        container.setObjectName("titleBarContainer")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._title_bar)
+        layout.addWidget(self.menuBar())
+        self.setMenuWidget(container)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange:
+            self._title_bar.refresh_maximize_glyph()
+
     def _build_layout(self) -> None:
         central = QWidget(self)
         central.setObjectName("centralWidget")
@@ -640,18 +608,18 @@ class MainWindow(QMainWindow):
         mark.setObjectName("brandMark")
         mark.setFixedSize(34, 34)
 
-        title_box = QVBoxLayout()
-        title_box.setContentsMargins(0, 0, 0, 0)
-        title_box.setSpacing(0)
-        title = QLabel("Transfer Learning Studio")
-        title.setObjectName("appTitle")
-        subtitle = QLabel("Domain adaptation experiment workbench")
-        subtitle.setObjectName("appSubtitle")
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
+        # title_box = QVBoxLayout()
+        # title_box.setContentsMargins(0, 0, 0, 0)
+        # title_box.setSpacing(0)
+        # title = QLabel("Adapta: Transfer Learning Studio")
+        # title.setObjectName("appTitle")
+        # subtitle = QLabel("Domain adaptation experiment workbench")
+        # subtitle.setObjectName("appSubtitle")
+        # title_box.addWidget(title)
+        # title_box.addWidget(subtitle)
 
-        layout.addWidget(mark)
-        layout.addLayout(title_box)
+        # layout.addWidget(mark)
+        # layout.addLayout(title_box)
         layout.addStretch(1)
         layout.addWidget(self._user_label)
         layout.addWidget(self._logout_button)
@@ -714,13 +682,11 @@ class MainWindow(QMainWindow):
 
         grid.addWidget(self._field_label("Source"), 0, 0)
         grid.addWidget(self._source_input, 0, 1)
-        grid.addWidget(self._browse_source_button, 0, 2)
 
         grid.addWidget(self._field_label("Target"), 1, 0)
         grid.addWidget(self._target_input, 1, 1)
-        grid.addWidget(self._browse_target_button, 1, 2)
 
-        grid.addWidget(self._swap_button, 0, 3, 2, 1, Qt.AlignVCenter)
+        grid.addWidget(self._swap_button, 0, 2, 2, 1, Qt.AlignVCenter)
         return widget
 
     def _build_batch_dataset_widget(self) -> QWidget:
@@ -842,6 +808,11 @@ class MainWindow(QMainWindow):
     def _build_results_tabs(self) -> QTabWidget:
         self._results_tabs = QTabWidget()
         self._results_tabs.setDocumentMode(True)
+        # Closable so a per-experiment detail tab (opened from History) can be
+        # dismissed — the fixed tabs below have their close button hidden
+        # individually right after being added, so only those stay closable.
+        self._results_tabs.setTabsClosable(True)
+        self._results_tabs.tabCloseRequested.connect(self._close_results_tab)
 
         predictions_page = QWidget()
         predictions_layout = QVBoxLayout(predictions_page)
@@ -849,8 +820,8 @@ class MainWindow(QMainWindow):
         predictions_layout.setSpacing(8)
         filter_row = QHBoxLayout()
         filter_row.addWidget(self._incorrect_only_check)
+        filter_row.addWidget(self._correct_only_check)
         filter_row.addStretch(1)
-        filter_row.addWidget(self._fullscreen_button)
         predictions_layout.addLayout(filter_row)
         predictions_layout.addWidget(self._predictions_table, 1)
 
@@ -885,7 +856,14 @@ class MainWindow(QMainWindow):
         self._results_tabs.addTab(self._history_tab, "History")
         self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
         self._history_tab_index = self._results_tabs.indexOf(self._history_tab)
+
+        # These six are permanent — only dynamically opened experiment-detail
+        # tabs (see _open_experiment_detail_tab) are meant to be closable.
+        for index in range(self._results_tabs.count()):
+            self._results_tabs.tabBar().setTabButton(index, QTabBar.RightSide, None)
         self._set_history_visible(self._current_user is not None)
+
+        self._results_tabs.setCornerWidget(self._results_fullscreen_button, Qt.TopRightCorner)
         return self._results_tabs
 
     def _build_status_bar(self) -> None:
@@ -912,9 +890,15 @@ class MainWindow(QMainWindow):
         label.setObjectName("fieldLabel")
         return label
 
+    def _build_fullscreen_button(self, tooltip: str) -> QPushButton:
+        button = QPushButton("⛶  Full Screen")
+        button.setObjectName("fullscreenButton")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setToolTip(tooltip)
+        button.setEnabled(False)
+        return button
+
     def _connect_signals(self) -> None:
-        self._browse_source_button.clicked.connect(self._pick_source)
-        self._browse_target_button.clicked.connect(self._pick_target)
         self._source_input.clicked.connect(self._pick_source)
         self._target_input.clicked.connect(self._pick_target)
         self._swap_button.clicked.connect(self._swap_datasets)
@@ -940,8 +924,9 @@ class MainWindow(QMainWindow):
         self._preprocessing_action.triggered.connect(lambda: self._open_learning_materials(3))
 
         self._method_combo.currentTextChanged.connect(self._sync_method_parameters)
-        self._incorrect_only_check.toggled.connect(self._apply_prediction_filter)
-        self._fullscreen_button.clicked.connect(self._open_predictions_fullscreen)
+        self._incorrect_only_check.toggled.connect(self._on_prediction_filter_toggled)
+        self._correct_only_check.toggled.connect(self._on_prediction_filter_toggled)
+        self._results_fullscreen_button.clicked.connect(self._open_results_fullscreen)
         self._theme_toggle_button.clicked.connect(self._toggle_theme)
 
         self._logout_button.clicked.connect(self._handle_auth_button_clicked)
@@ -950,6 +935,7 @@ class MainWindow(QMainWindow):
         self._refresh_history_action.triggered.connect(self._show_history)
         self._database_info_action.triggered.connect(self._show_database_info)
         self._history_tab.configuration_requested.connect(self._apply_configuration)
+        self._history_tab.detail_requested.connect(self._open_experiment_detail_tab)
 
     # ------------------------------------------------------------------
     # Configuration state
@@ -1034,6 +1020,14 @@ class MainWindow(QMainWindow):
             if index < 0:
                 insert_at = min(self._history_tab_index, self._results_tabs.count())
                 self._results_tabs.insertTab(insert_at, self._history_tab, "History")
+                # insertTab always gives a fresh tab a close button when the
+                # widget is tabsClosable — History is permanent like the other
+                # five fixed tabs, so strip it (as _build_results_tabs does
+                # for the initial six) or it would show a close "x" that,
+                # if clicked, deletes the singleton HistoryTab widget.
+                self._results_tabs.tabBar().setTabButton(
+                    insert_at, QTabBar.RightSide, None
+                )
         elif index >= 0:
             if self._results_tabs.currentIndex() == index:
                 self._results_tabs.setCurrentIndex(0)
@@ -1047,7 +1041,7 @@ class MainWindow(QMainWindow):
 
     def _show_login_dialog(self) -> None:
         if self._auth is None:
-            QMessageBox.information(
+            message_box.information(
                 self,
                 "Log In Unavailable",
                 "Sign-in is only available when the database connection is active.",
@@ -1071,7 +1065,7 @@ class MainWindow(QMainWindow):
         self._update_context_label()
         self._update_auth_ui()
         self._set_status("You have been logged out.", "neutral")
-        QMessageBox.information(
+        message_box.information(
             self,
             "Logged Out",
             "You have been logged out. You can keep running experiments, but history stays hidden until you log in again.",
@@ -1147,7 +1141,7 @@ class MainWindow(QMainWindow):
 
     def _show_database_info(self) -> None:
         if self._catalog is None:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Database Unavailable",
                 "No PostgreSQL connection.\n\n"
@@ -1158,10 +1152,10 @@ class MainWindow(QMainWindow):
         try:
             stats = self._catalog.statistics()
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Database Error", str(exc))
+            message_box.critical(self, "Database Error", str(exc))
             return
 
-        QMessageBox.information(
+        message_box.information(
             self,
             "Database Connection",
             "<b>PostgreSQL connected</b>"
@@ -1206,16 +1200,75 @@ class MainWindow(QMainWindow):
             f"Loaded configuration from experiment #{experiment.id}", "neutral"
         )
 
+    def _open_experiment_detail_tab(self, entry: ExperimentHistoryEntry) -> None:
+        """Open (or raise) a closable tab with every field of *entry*.
+
+        Joins in the source/target ``DatasetRecord`` rows, which
+        ``ExperimentHistoryEntry`` doesn't carry (it only denormalises the
+        domain *names*) — this is the one place that needs the full rows.
+        """
+        experiment_id = entry.experiment.id
+        if experiment_id is None or self._catalog is None:
+            return
+
+        existing = self._experiment_detail_tabs.get(experiment_id)
+        if existing is not None:
+            index = self._results_tabs.indexOf(existing)
+            if index >= 0:
+                self._results_tabs.setCurrentIndex(index)
+                return
+            # The tab was closed without going through _close_results_tab
+            # (shouldn't normally happen); fall through and rebuild it.
+            del self._experiment_detail_tabs[experiment_id]
+
+        try:
+            source_dataset = self._catalog.get_dataset(entry.experiment.source_dataset_id)
+            target_dataset = self._catalog.get_dataset(entry.experiment.target_dataset_id)
+        except Exception:  # noqa: BLE001 - the detail view just shows "—" instead
+            source_dataset = None
+            target_dataset = None
+
+        view = ExperimentDetailView(entry, source_dataset, target_dataset, self._palette)
+        index = self._results_tabs.addTab(view, f"Experiment #{experiment_id}")
+        self._experiment_detail_tabs[experiment_id] = view
+        self._results_tabs.setCurrentIndex(index)
+
+    def _close_results_tab(self, index: int) -> None:
+        """Handle the tab strip's close button — only detail tabs have one.
+
+        Guards against ever deleting one of the six permanent tabs (their
+        close buttons are stripped, but this is a second line of defence):
+        only a widget actually tracked in ``_experiment_detail_tabs`` gets
+        removed and deleted.
+        """
+        widget = self._results_tabs.widget(index)
+        experiment_id = next(
+            (eid for eid, view in self._experiment_detail_tabs.items() if view is widget),
+            None,
+        )
+        if experiment_id is None:
+            return
+        del self._experiment_detail_tabs[experiment_id]
+        self._results_tabs.removeTab(index)
+        widget.deleteLater()
+
     # ------------------------------------------------------------------
     # Theming
     # ------------------------------------------------------------------
+    def _apply_theme_stylesheet(self) -> None:
+        stylesheet = build_style_sheet(self._palette)
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(stylesheet)
+        self.setStyleSheet(stylesheet)
+
     def _toggle_theme(self) -> None:
         self._theme = "light" if self._theme == "dark" else "dark"
         self._palette = LIGHT_PALETTE if self._theme == "light" else DARK_PALETTE
         self._apply_theme()
 
     def _apply_theme(self) -> None:
-        self.setStyleSheet(build_style_sheet(self._palette))
+        self._apply_theme_stylesheet()
         self._theme_toggle_button.setText("🌙  Dark" if self._theme == "light" else "☀  Light")
 
         color = self._palette[self._status_key]
@@ -1272,9 +1325,16 @@ class MainWindow(QMainWindow):
 
     def _pick_file(self, target_input: QLineEdit, title: str) -> None:
         start_dir = target_input.text().strip() or str(Path.cwd())
-        file_path, _ = QFileDialog.getOpenFileName(self, title, start_dir, DATASET_FILTER)
-        if file_path:
-            target_input.setText(file_path)
+        dialog = QFileDialog(self, title, start_dir, DATASET_FILTER)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        dialog.setFileMode(QFileDialog.ExistingFile)
+        dialog.setAcceptMode(QFileDialog.AcceptOpen)
+        dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, title)
+        if dialog.exec_() == QDialog.Accepted:
+            selected_files = dialog.selectedFiles()
+            if selected_files:
+                target_input.setText(selected_files[0])
 
     # ------------------------------------------------------------------
     # Batch mode
@@ -1286,9 +1346,15 @@ class MainWindow(QMainWindow):
 
     def _add_batch_files(self) -> None:
         start_dir = str(Path.cwd())
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select Dataset Files", start_dir, DATASET_FILTER
-        )
+        dialog = QFileDialog(self, "Select Dataset Files", start_dir, DATASET_FILTER)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        dialog.setFileMode(QFileDialog.ExistingFiles)
+        dialog.setAcceptMode(QFileDialog.AcceptOpen)
+        dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, "Select Dataset Files")
+        file_paths = []
+        if dialog.exec_() == QDialog.Accepted:
+            file_paths = dialog.selectedFiles()
         existing = {
             self._batch_files_list.item(i).text() for i in range(self._batch_files_list.count())
         }
@@ -1337,7 +1403,7 @@ class MainWindow(QMainWindow):
         target_path = self._target_input.text().strip()
 
         if not source_path or not target_path:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Missing Dataset",
                 "Select both a source and a target dataset before running.",
@@ -1346,7 +1412,7 @@ class MainWindow(QMainWindow):
 
         missing = [p for p in (source_path, target_path) if not Path(p).is_file()]
         if missing:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Dataset Not Found",
                 "The following path is not a readable file:\n\n" + "\n".join(missing),
@@ -1389,7 +1455,7 @@ class MainWindow(QMainWindow):
         ]
 
         if len(file_paths) < 2:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Not Enough Files",
                 "Add at least two dataset files to run a batch.",
@@ -1398,7 +1464,7 @@ class MainWindow(QMainWindow):
 
         missing = [p for p in file_paths if not Path(p).is_file()]
         if missing:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Dataset Not Found",
                 "The following path is not a readable file:\n\n" + "\n".join(missing),
@@ -1452,6 +1518,8 @@ class MainWindow(QMainWindow):
         self._show_transformed_features(result)
         self._charts_widget.update_result(result)
 
+        self._results_fullscreen_button.setEnabled(True)
+
         self._results_stack.setCurrentIndex(1)
         self._update_context_label()
         self._record_run(result, error_message=None)
@@ -1466,6 +1534,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Experiment Failed")
         box.setText("The transfer learning run could not be completed.")
         box.setInformativeText(message)
+        install_title_bar_on_grid(box, "Experiment Failed")
         box.exec_()
 
     def _on_batch_success(self, batch_result: BatchTransferLearningResult) -> None:
@@ -1495,6 +1564,7 @@ class MainWindow(QMainWindow):
             )
 
         self._populate_batch_results(batch_result)
+        self._results_fullscreen_button.setEnabled(True)
         self._results_stack.setCurrentIndex(1)
         if self._batch_results_tab_index >= 0:
             self._results_tabs.setCurrentIndex(self._batch_results_tab_index)
@@ -1506,6 +1576,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Batch Run Failed")
         box.setText("The batch run could not be completed.")
         box.setInformativeText(message)
+        install_title_bar_on_grid(box, "Batch Run Failed")
         box.exec_()
 
     def _populate_batch_results(self, batch_result: BatchTransferLearningResult) -> None:
@@ -1571,19 +1642,23 @@ class MainWindow(QMainWindow):
                 f"{total} pairs run — no pair produced evaluable metrics "
                 "(datasets may be missing labels, or every pair failed)."
             )
-
     def _show_about(self) -> None:
-        QMessageBox.about(
-            self,
-            "About Transfer Learning Studio",
-            "<b>Transfer Learning Studio</b>"
+        title = "About Adapta: Transfer Learning Studio"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(title)
+        box.setStyleSheet(build_style_sheet(self._palette))
+        box.setText(
+            "<b>Adapta: Transfer Learning Studio</b>"
             "<p>Desktop workbench for domain adaptation experiments.</p>"
             "<p>Methods: "
             + ", ".join(self._use_case.method_names)
             + ".<br>Classifiers: k-NN, SVM, Random Forest, Logistic Regression, Decision Tree.<br>"
             "The selected classifier is fitted on the transformed source domain and "
-            "evaluated on the transformed target domain.</p>",
+            "evaluated on the transformed target domain.</p>"
         )
+        install_title_bar_on_grid(box, title)
+        box.exec_()
 
     # ------------------------------------------------------------------
     # Rendering
@@ -1613,25 +1688,38 @@ class MainWindow(QMainWindow):
 
         for row, (role, dataset) in enumerate(rows):
             feature_names = ", ".join(dataset.feature_names)
+            class_names = _dataset_class_names(dataset.labels)
+            dtype_summary = _dataset_dtype_summary(dataset.dtypes)
             values = [
                 role,
                 str(dataset.features.shape[0]),
                 str(dataset.features.shape[1]),
                 dataset.label_name,
+                str(len(class_names)),
+                dtype_summary or "—",
+                str(dataset.missing_value_count),
                 feature_names,
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if column in (1, 2):
+                if column in (1, 2, 4, 6):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                if column == 4:
+                if column == 4 and class_names:
+                    item.setToolTip(f"Classes: {', '.join(class_names)}")
+                elif column == 5 and dtype_summary:
+                    item.setToolTip(", ".join(dataset.dtypes))
+                elif column == 6 and dataset.missing_value_count:
+                    item.setToolTip(
+                        "Missing/non-numeric feature cells were filled with 0.0 at load time."
+                    )
+                elif column == 7:
                     item.setToolTip(feature_names)
                 self._summary_table.setItem(row, column, item)
 
         header = self._summary_table.horizontalHeader()
-        for column in range(4):
+        for column in range(7):
             header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
+        header.setSectionResizeMode(7, QHeaderView.Stretch)
 
         # Only ever two rows, so size to content instead of leaving blank space.
         row_height = self._summary_table.verticalHeader().defaultSectionSize()
@@ -1644,14 +1732,14 @@ class MainWindow(QMainWindow):
         if result.target_predictions is None:
             table.setRowCount(0)
             self._incorrect_only_check.setEnabled(False)
-            self._fullscreen_button.setEnabled(False)
+            self._correct_only_check.setEnabled(False)
             self._results_tabs.setTabEnabled(0, False)
             self._results_tabs.setCurrentIndex(1)
             return
 
         self._results_tabs.setTabEnabled(0, True)
         self._incorrect_only_check.setEnabled(True)
-        self._fullscreen_button.setEnabled(True)
+        self._correct_only_check.setEnabled(True)
         self._results_tabs.setCurrentIndex(0)
 
         correct_brush = QBrush(QColor(self._palette["success"]))
@@ -1683,25 +1771,42 @@ class MainWindow(QMainWindow):
 
         self._apply_prediction_filter()
 
+    def _on_prediction_filter_toggled(self) -> None:
+        sender = self.sender()
+        if sender is None or not sender.isChecked():
+            self._apply_prediction_filter()
+            return
+        other = self._incorrect_only_check if sender is self._correct_only_check else self._correct_only_check
+        other.blockSignals(True)
+        other.setChecked(False)
+        other.blockSignals(False)
+        self._apply_prediction_filter()
+
     def _apply_prediction_filter(self) -> None:
-        """Hide correctly classified rows when the filter is active."""
+        """Hide rows according to the active filter."""
         result = self._last_result
         if result is None or result.prediction_correctness is None:
             return
 
+        correct_only = self._correct_only_check.isChecked()
         incorrect_only = self._incorrect_only_check.isChecked()
         for row, correctness in enumerate(result.prediction_correctness):
-            self._predictions_table.setRowHidden(
-                row, incorrect_only and correctness == "Right"
-            )
+            hide = (
+                incorrect_only and correctness == "Right"
+            ) or (correct_only and correctness == "Wrong")
+            self._predictions_table.setRowHidden(row, hide)
 
-    def _open_predictions_fullscreen(self) -> None:
-        """Open (or raise) the standalone predictions window."""
-        if self._last_result is None or self._last_result.target_predictions is None:
-            return
-        # Keep a reference so the window is not immediately garbage-collected,
-        # and bring it to the front if it is already open.
-        win = getattr(self, "_predictions_window", None)
+    def _open_results_fullscreen(self) -> None:
+        """Move the whole results tab widget into a maximized window.
+
+        All tabs (Predictions, Visualizations, Transformed Features, Dataset
+        Summary, Batch Results, History) move together and stay switchable —
+        this is one full-screen view over the tab strip, not a separate one
+        per tab. ``self._results_tabs`` is reparented in place (not copied),
+        so it keeps its live state, and is handed back to the same slot in
+        ``self._results_stack`` when the window closes.
+        """
+        win = getattr(self, "_results_window", None)
         try:
             if win is not None:
                 win.raise_()
@@ -1710,12 +1815,30 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             # The user already closed the previous window (WA_DeleteOnClose).
             pass
-        self._predictions_window = PredictionsWindow(
-            self._last_result, self._palette, build_style_sheet(self._palette), parent=None
+
+        origin_index = self._results_stack.indexOf(self._results_tabs)
+        self._results_stack.removeWidget(self._results_tabs)
+        # The corner button travels with the tab widget (it's the same
+        # instance, just reparented) — hide it so a window already in full
+        # screen doesn't show a button to open full screen again.
+        self._results_fullscreen_button.hide()
+        win = FullScreenViewer(
+            "Results", self._results_tabs, build_style_sheet(self._palette), parent=None
         )
-        self._predictions_window.destroyed.connect(
-            lambda: setattr(self, "_predictions_window", None)
-        )
+        # QStackedWidget.removeWidget() leaves the widget hidden (it was only
+        # ever shown as the "current" stack page) — without this it silently
+        # stays invisible in its new window.
+        self._results_tabs.show()
+        self._results_window = win
+
+        def _restore() -> None:
+            self._results_stack.insertWidget(origin_index, self._results_tabs)
+            self._results_tabs.show()
+            self._results_stack.setCurrentWidget(self._results_tabs)
+            self._results_fullscreen_button.show()
+            self._results_window = None
+
+        win.destroyed.connect(_restore)
 
     def _show_transformed_features(self, result: TransferLearningResult) -> None:
         matrix = result.transformed_target
@@ -1761,14 +1884,24 @@ class MainWindow(QMainWindow):
         if result is None:
             return
 
-        file_path, _ = QFileDialog.getSaveFileName(
+        dialog = QFileDialog(
             self,
             "Export PDF Report",
             str(Path.cwd() / "Transfer_Learning_Report.pdf"),
             "PDF Files (*.pdf)",
         )
-        if not file_path:
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
+        dialog.setAcceptMode(QFileDialog.AcceptSave)
+        dialog.setDefaultSuffix("pdf")
+        dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, "Export PDF Report")
+        if dialog.exec_() != QDialog.Accepted:
             return
+
+        selected_files = dialog.selectedFiles()
+        if not selected_files:
+            return
+        file_path = selected_files[0]
         if not file_path.lower().endswith(".pdf"):
             file_path += ".pdf"
 
@@ -1782,13 +1915,13 @@ class MainWindow(QMainWindow):
             printer.setPageMargins(15, 15, 15, 15, QPrinter.Millimeter)
             document.print_(printer)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
-            QMessageBox.critical(
+            message_box.critical(
                 self, "Export Failed", f"The report could not be written:\n\n{exc}"
             )
             return
 
         self._set_status("Report exported", "success")
-        QMessageBox.information(
+        message_box.information(
             self, "Report Exported", f"The PDF report was saved to:\n\n{file_path}"
         )
 

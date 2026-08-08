@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -23,6 +24,8 @@ from PyQt5.QtWidgets import (
 
 from application.authentication_use_case import AuthenticationError, AuthenticationUseCase
 from domain.entities import User, UserRole
+from presentation.qt import message_box
+from presentation.qt.title_bar import install_title_bar
 
 
 def _field_label(text: str) -> QLabel:
@@ -54,7 +57,6 @@ class AuthDialog(QDialog):
         self.setWindowTitle("Sign In — Transfer Learning Studio")
         self.setStyleSheet(stylesheet)
         self.setMinimumWidth(380)
-        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
 
         self._build_login_page()
         self._build_register_page()
@@ -69,13 +71,31 @@ class AuthDialog(QDialog):
         subtitle.setObjectName("appSubtitle")
         subtitle.setWordWrap(True)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 22, 26, 20)
-        layout.setSpacing(4)
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
-        layout.addSpacing(14)
-        layout.addWidget(self._stack)
+        card = QWidget()
+        card.setObjectName("authCard")
+        card.setFixedWidth(380)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(26, 22, 26, 20)
+        card_layout.setSpacing(4)
+        card_layout.addWidget(title)
+        card_layout.addWidget(subtitle)
+        card_layout.addSpacing(14)
+        card_layout.addWidget(self._stack)
+
+        # Full screen leaves a lot of empty space around a small form, so the
+        # card is centered in whatever room the window has instead of
+        # sitting pinned to the top-left corner.
+        body = QWidget()
+        body_row = QHBoxLayout(body)
+        body_row.addStretch(1)
+        body_column = QVBoxLayout()
+        body_column.addStretch(1)
+        body_column.addWidget(card)
+        body_column.addStretch(1)
+        body_row.addLayout(body_column)
+        body_row.addStretch(1)
+
+        install_title_bar(self, "Sign In — Transfer Learning Studio", body)
 
         self._stack.setCurrentIndex(1 if start_on_register else 0)
 
@@ -167,22 +187,22 @@ class AuthDialog(QDialog):
         email = self._login_email.text()
         password = self._login_password.text()
         if not email.strip() or not password:
-            QMessageBox.warning(self, "Missing Information", "Enter your email and password.")
+            message_box.warning(self, "Missing Information", "Enter your email and password.")
             return
         try:
             self._user = self._auth.login(email, password)
         except AuthenticationError as exc:
-            QMessageBox.warning(self, "Could Not Log In", str(exc))
+            message_box.warning(self, "Could Not Log In", str(exc))
             return
         except Exception as exc:  # noqa: BLE001 - surfaced verbatim
-            QMessageBox.critical(self, "Database Error", str(exc))
+            message_box.critical(self, "Database Error", str(exc))
             return
         self.accept()
 
     def _do_register(self) -> None:
         password = self._register_password.text()
         if password != self._register_confirm.text():
-            QMessageBox.warning(
+            message_box.warning(
                 self, "Passwords Do Not Match", "Re-type the same password twice."
             )
             return
@@ -194,10 +214,10 @@ class AuthDialog(QDialog):
                 role=self._register_role.currentData(),
             )
         except AuthenticationError as exc:
-            QMessageBox.warning(self, "Could Not Register", str(exc))
+            message_box.warning(self, "Could Not Register", str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Database Error", str(exc))
+            message_box.critical(self, "Database Error", str(exc))
             return
         self.accept()
 

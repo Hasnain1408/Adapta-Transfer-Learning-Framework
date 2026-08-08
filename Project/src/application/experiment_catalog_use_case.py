@@ -121,12 +121,21 @@ class ExperimentCatalogUseCase:
             label_name=str(dataset.label_name or ""),
             num_classes=len(class_names),
             class_names=class_names,
+            dtype_summary=_dtype_summary(dataset.dtypes),
+            missing_value_count=dataset.missing_value_count,
             source_path=str(path),
         )
         return self._datasets.upsert_by_path(record)
 
     def list_datasets(self) -> list[DatasetRecord]:
         return self._datasets.list_all()
+
+    def get_dataset(self, dataset_id: int | None) -> DatasetRecord | None:
+        """``None`` in, ``None`` out — lets callers pass an experiment's
+        possibly-unset ``source_dataset_id``/``target_dataset_id`` directly."""
+        if dataset_id is None:
+            return None
+        return self._datasets.get(dataset_id)
 
     def delete_dataset(self, dataset_id: int) -> bool:
         return self._datasets.delete(dataset_id)
@@ -281,6 +290,21 @@ def _class_names(labels: np.ndarray | None) -> list[str]:
         return [str(value) for value in np.unique(labels)]
     except (TypeError, ValueError):
         return sorted({str(value) for value in labels})
+
+
+def _dtype_summary(dtypes: list[str]) -> str:
+    """Compact ``"float64 x24, int64 x2"``-style summary for a table cell.
+
+    Preserves first-seen order (``dict`` insertion order) rather than
+    alphabetising, so a mostly-numeric file reads as e.g. "float64 x24, str
+    x2" instead of burying the more common type behind the sort order.
+    """
+    if not dtypes:
+        return ""
+    counts: dict[str, int] = {}
+    for dtype in dtypes:
+        counts[dtype] = counts.get(dtype, 0) + 1
+    return ", ".join(f"{dtype} x{count}" for dtype, count in counts.items())
 
 
 def _safe_count(repository: object) -> int:

@@ -5,6 +5,7 @@ import os
 import sys
 
 from PyQt5.QtCore import QTimer
+from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication
 
 from application.authentication_use_case import AuthenticationUseCase
@@ -30,6 +31,11 @@ from infrastructure.persistence import (
     PostgresUserRepository,
 )
 from presentation.qt.main_window import MainWindow
+from presentation.qt.style import DARK_PALETTE, build_style_sheet
+
+_APP_ICON_PATH = os.path.join(
+    os.path.dirname(__file__), "presentation", "qt", "assets", "app_icon.svg"
+)
 
 
 def build_catalog(
@@ -72,7 +78,7 @@ def build_window(
 ) -> MainWindow:
     loader = CSVDatasetLoader()
     methods = [
-        TCAMethod(latent_dim=5, regularization=1.0),
+        TCAMethod(latent_dim=5, regularization=1.0, kernel_type="linear"),
         JDAMethod(latent_dim=5, regularization=1.0, kernel_type="linear", iterations=10),
         CORALMethod(),
         BDAMethod(mode="W-BDA", mu=1.0, regularization=0.1, latent_dim=10, kernel_type="linear", iterations=10),
@@ -111,6 +117,11 @@ def main() -> int:
     # /cofiguration code
 
     app = QApplication(sys.argv)
+    app.setApplicationName("Adapta")
+    app.setApplicationDisplayName("Adapta: Transfer Learning Studio")
+    app.setOrganizationName("Adapta")
+    app.setWindowIcon(QIcon(_APP_ICON_PATH))
+    app.setStyleSheet(build_style_sheet(DARK_PALETTE))
 
     if args.no_database:
         catalog, auth, database, error = None, None, None, "Started with --no-database."

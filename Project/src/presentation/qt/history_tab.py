@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from domain.entities import ExperimentHistoryEntry, ExperimentStatus, User
+from presentation.qt import message_box
 
 #: ``(header, width hint)``. ``None`` means the column stretches.
 _COLUMNS: list[tuple[str, int | None]] = [
@@ -57,6 +58,7 @@ class HistoryTab(QWidget):
     """
 
     configuration_requested = pyqtSignal(object)  # ExperimentRecord
+    detail_requested = pyqtSignal(object)  # ExperimentHistoryEntry
 
     def __init__(
         self,
@@ -122,6 +124,7 @@ class HistoryTab(QWidget):
         self._table.verticalHeader().setDefaultSectionSize(30)
         self._table.horizontalHeader().setHighlightSections(False)
         self._table.itemSelectionChanged.connect(self._sync_buttons)
+        self._table.itemSelectionChanged.connect(self._emit_detail_request)
         self._table.doubleClicked.connect(self._emit_configuration)
 
         # Per-column resize modes must be set instead of calling
@@ -254,12 +257,17 @@ class HistoryTab(QWidget):
         if entry is not None:
             self.configuration_requested.emit(entry.experiment)
 
+    def _emit_detail_request(self) -> None:
+        entry = self._selected_entry()
+        if entry is not None:
+            self.detail_requested.emit(entry)
+
     def _delete_selected(self) -> None:
         entry = self._selected_entry()
         if entry is None or self._catalog is None or entry.experiment.id is None:
             return
 
-        confirmed = QMessageBox.question(
+        confirmed = message_box.question(
             self,
             "Delete Experiment",
             f"Delete experiment #{entry.experiment.id} "
@@ -274,7 +282,7 @@ class HistoryTab(QWidget):
         try:
             self._catalog.delete_experiment(entry.experiment.id)
         except Exception as exc:  # noqa: BLE001 - shown verbatim
-            QMessageBox.critical(
+            message_box.critical(
                 self, "Delete Failed", f"The experiment could not be deleted:\n\n{exc}"
             )
             return

@@ -30,6 +30,8 @@ from PyQt5.QtWidgets import (
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from domain.auth import hash_password
 from domain.entities import DatasetRecord, User, UserRole
+from presentation.qt import message_box
+from presentation.qt.title_bar import install_title_bar
 
 
 def _format_timestamp(value: object) -> str:
@@ -89,11 +91,13 @@ class UserEditorDialog(QDialog):
         buttons.accepted.connect(self._validate_and_accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
+        body = QWidget()
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(18, 16, 18, 14)
         layout.setSpacing(14)
         layout.addLayout(form)
         layout.addWidget(buttons)
+        install_title_bar(self, "Edit User" if user else "New User", body)
 
     @staticmethod
     def _field_label(text: str) -> QLabel:
@@ -109,20 +113,20 @@ class UserEditorDialog(QDialog):
         exception into a readable message.
         """
         if not self._name_input.text().strip():
-            QMessageBox.warning(self, "Name Required", "Enter a name for the user.")
+            message_box.warning(self, "Name Required", "Enter a name for the user.")
             return
         email = self._email_input.text().strip()
         if not email:
-            QMessageBox.warning(self, "Email Required", "Enter an email address.")
+            message_box.warning(self, "Email Required", "Enter an email address.")
             return
         if "@" not in email or email.startswith("@") or email.endswith("@"):
-            QMessageBox.warning(
+            message_box.warning(
                 self, "Invalid Email", f"{email!r} does not look like an email address."
             )
             return
         password = self._password_input.text()
         if password and len(password) < 8:
-            QMessageBox.warning(
+            message_box.warning(
                 self, "Weak Password", "Password must be at least 8 characters long."
             )
             return
@@ -222,12 +226,14 @@ class UserManagerDialog(QDialog):
         self._caption = QLabel()
         self._caption.setObjectName("captionLabel")
 
-        layout = QVBoxLayout(self)
+        body = QWidget()
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(18, 16, 18, 14)
         layout.setSpacing(10)
         layout.addWidget(self._table, 1)
         layout.addWidget(self._caption)
         layout.addLayout(actions)
+        install_title_bar(self, "Manage Users", body)
 
     # ------------------------------------------------------------------
     def refresh(self) -> None:
@@ -282,10 +288,10 @@ class UserManagerDialog(QDialog):
         except ValueError as exc:
             # Duplicate email — the repository translates the unique-index
             # violation into this.
-            QMessageBox.warning(self, "Could Not Add User", str(exc))
+            message_box.warning(self, "Could Not Add User", str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Database Error", str(exc))
+            message_box.critical(self, "Database Error", str(exc))
             return
         self.refresh()
 
@@ -299,10 +305,10 @@ class UserManagerDialog(QDialog):
         try:
             self._catalog.update_user(dialog.user())
         except ValueError as exc:
-            QMessageBox.warning(self, "Could Not Save User", str(exc))
+            message_box.warning(self, "Could Not Save User", str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Database Error", str(exc))
+            message_box.critical(self, "Database Error", str(exc))
             return
         self.refresh()
 
@@ -310,7 +316,7 @@ class UserManagerDialog(QDialog):
         user = self._selected_user()
         if user is None or user.id is None:
             return
-        confirmed = QMessageBox.question(
+        confirmed = message_box.question(
             self,
             "Delete User",
             f"Delete {user.name} ({user.email})?\n\n"
@@ -323,7 +329,7 @@ class UserManagerDialog(QDialog):
         try:
             self._catalog.delete_user(user.id)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Delete Failed", str(exc))
+            message_box.critical(self, "Delete Failed", str(exc))
             return
         self.refresh()
 
@@ -364,6 +370,8 @@ class DatasetRegistryDialog(QDialog):
             "Features",
             "Label",
             "Classes",
+            "Data Types",
+            "Missing Values",
             "Registered",
         ]
         self._table.setColumnCount(len(headers))
@@ -379,7 +387,7 @@ class DatasetRegistryDialog(QDialog):
         self._table.itemSelectionChanged.connect(self._sync_buttons)
 
         header = self._table.horizontalHeader()
-        fixed_widths = {0: 56, 2: 80, 3: 90, 4: 90, 6: 90, 7: 140}
+        fixed_widths = {0: 56, 2: 80, 3: 90, 4: 90, 6: 90, 8: 120, 9: 140}
         for index in range(len(headers)):
             if index in fixed_widths:
                 header.setSectionResizeMode(index, QHeaderView.Fixed)
@@ -411,12 +419,14 @@ class DatasetRegistryDialog(QDialog):
         self._caption = QLabel()
         self._caption.setObjectName("captionLabel")
 
-        layout = QVBoxLayout(self)
+        body = QWidget()
+        layout = QVBoxLayout(body)
         layout.setContentsMargins(18, 16, 18, 14)
         layout.setSpacing(10)
         layout.addWidget(self._table, 1)
         layout.addWidget(self._caption)
         layout.addLayout(actions)
+        install_title_bar(self, "Dataset Registry", body)
 
     # ------------------------------------------------------------------
     def refresh(self) -> None:
@@ -440,11 +450,13 @@ class DatasetRegistryDialog(QDialog):
                 str(dataset.num_features),
                 dataset.label_name or "—",
                 str(dataset.num_classes),
+                dataset.dtype_summary or "—",
+                str(dataset.missing_value_count),
                 _format_timestamp(dataset.created_at),
             ]
             for column, value in enumerate(cells):
                 item = QTableWidgetItem(value)
-                if column in (0, 2, 3, 4, 6, 7):
+                if column in (0, 2, 3, 4, 6, 8, 9):
                     item.setTextAlignment(Qt.AlignCenter)
                 # The full path, feature list and class list are all too long
                 # for a cell but valuable on hover.
@@ -454,6 +466,10 @@ class DatasetRegistryDialog(QDialog):
                     item.setToolTip(f"Features: {feature_names}")
                 elif column == 6 and class_names:
                     item.setToolTip(f"Classes: {class_names}")
+                elif column == 8 and dataset.missing_value_count:
+                    item.setToolTip(
+                        "Missing/non-numeric feature cells were filled with 0.0 at load time."
+                    )
                 self._table.setItem(row, column, item)
 
         count = len(self._datasets)
@@ -476,7 +492,7 @@ class DatasetRegistryDialog(QDialog):
         dataset = self._selected_dataset()
         if dataset is None or dataset.id is None:
             return
-        confirmed = QMessageBox.question(
+        confirmed = message_box.question(
             self,
             "Remove Dataset",
             f"Remove {dataset.name} from the registry?\n\n"
@@ -490,6 +506,6 @@ class DatasetRegistryDialog(QDialog):
         try:
             self._catalog.delete_dataset(dataset.id)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Delete Failed", str(exc))
+            message_box.critical(self, "Delete Failed", str(exc))
             return
         self.refresh()

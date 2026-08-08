@@ -104,6 +104,12 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
     )
     """,
+    # A database created before dtype/missing-value tracking existed lacks
+    # these columns; ADD COLUMN IF NOT EXISTS backfills them on an existing
+    # install the same way password_hash was added to users above.
+    "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS dtype_summary TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE datasets ADD COLUMN IF NOT EXISTS missing_value_count INTEGER "
+    "NOT NULL DEFAULT 0 CHECK (missing_value_count >= 0)",
     # ---------------------------------------------------------- experiments
     # ON DELETE SET NULL on all three foreign keys: removing a user or a
     # catalogue entry must not destroy the experiment history referencing it.
