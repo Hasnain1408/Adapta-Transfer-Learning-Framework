@@ -65,11 +65,14 @@ class CSVDatasetLoader:
             else:
                 raise ValueError("Feature dimensions do not match label dimensions.")
 
+            features = features.astype(float)
             return Dataset(
-                features=features.astype(float),
+                features=features,
                 labels=labels,
                 feature_names=[f"feature_{i+1}" for i in range(features.shape[1])],
                 label_name="label",
+                dtypes=[str(features.dtype)] * features.shape[1],
+                missing_value_count=int(np.isnan(features).sum()),
             )
         else:
             raise ValueError("Unsupported dataset format. Use .csv, .xlsx, or .mat files.")
@@ -77,7 +80,11 @@ class CSVDatasetLoader:
         if dataframe.shape[1] < 2:
             raise ValueError("Dataset must have at least 2 columns: features + label column.")
 
-        features_df = dataframe.iloc[:, :-1].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+        raw_features_df = dataframe.iloc[:, :-1]
+        dtypes = [str(dtype) for dtype in raw_features_df.dtypes]
+        coerced_df = raw_features_df.apply(pd.to_numeric, errors="coerce")
+        missing_value_count = int(coerced_df.isna().sum().sum())
+        features_df = coerced_df.fillna(0.0)
         labels_series = dataframe.iloc[:, -1]
         feature_names = [str(column) for column in dataframe.columns[:-1]]
         label_name = str(dataframe.columns[-1])
@@ -87,4 +94,6 @@ class CSVDatasetLoader:
             labels=labels_series.to_numpy(),
             feature_names=feature_names,
             label_name=label_name,
+            dtypes=dtypes,
+            missing_value_count=missing_value_count,
         )

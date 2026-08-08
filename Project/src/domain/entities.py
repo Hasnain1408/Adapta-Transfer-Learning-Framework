@@ -139,6 +139,11 @@ class DatasetRecord:
     num_classes: int = 0
     feature_names: list[str] = field(default_factory=list)
     class_names: list[str] = field(default_factory=list)
+    #: Compact summary of feature column dtypes, e.g. ``"float64 x24, int64 x2"``.
+    dtype_summary: str = ""
+    #: Feature cells that were missing or non-numeric at load time and got
+    #: filled with 0.0 — see ``models.Dataset.missing_value_count``.
+    missing_value_count: int = 0
     source_path: str = ""
     id: int | None = None
     created_at: datetime | None = None

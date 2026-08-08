@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
@@ -46,6 +46,14 @@ class Dataset:
     labels: Optional[np.ndarray]
     feature_names: list[str]
     label_name: str
+    #: Pandas dtype of each feature column *before* numeric coercion (e.g.
+    #: ``"int64"``, ``"float64"``, ``"object"``), parallel to ``feature_names``.
+    #: A ``.mat`` source has no such notion, so this is empty for those.
+    dtypes: list[str] = field(default_factory=list)
+    #: Count of missing/non-numeric feature cells found at load time — these
+    #: get filled with 0.0 before ``features`` is built, so this is the only
+    #: record that they were ever missing.
+    missing_value_count: int = 0
 
 
 @dataclass(frozen=True)
