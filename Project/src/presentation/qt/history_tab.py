@@ -58,6 +58,7 @@ class HistoryTab(QWidget):
     """
 
     configuration_requested = pyqtSignal(object)  # ExperimentRecord
+    detail_requested = pyqtSignal(object)  # ExperimentHistoryEntry
 
     def __init__(
         self,
@@ -123,6 +124,7 @@ class HistoryTab(QWidget):
         self._table.verticalHeader().setDefaultSectionSize(30)
         self._table.horizontalHeader().setHighlightSections(False)
         self._table.itemSelectionChanged.connect(self._sync_buttons)
+        self._table.itemSelectionChanged.connect(self._emit_detail_request)
         self._table.doubleClicked.connect(self._emit_configuration)
 
         # Per-column resize modes must be set instead of calling
@@ -254,6 +256,11 @@ class HistoryTab(QWidget):
         entry = self._selected_entry()
         if entry is not None:
             self.configuration_requested.emit(entry.experiment)
+
+    def _emit_detail_request(self) -> None:
+        entry = self._selected_entry()
+        if entry is not None:
+            self.detail_requested.emit(entry)
 
     def _delete_selected(self) -> None:
         entry = self._selected_entry()

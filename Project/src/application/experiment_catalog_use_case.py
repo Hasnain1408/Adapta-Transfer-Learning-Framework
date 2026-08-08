@@ -130,6 +130,13 @@ class ExperimentCatalogUseCase:
     def list_datasets(self) -> list[DatasetRecord]:
         return self._datasets.list_all()
 
+    def get_dataset(self, dataset_id: int | None) -> DatasetRecord | None:
+        """``None`` in, ``None`` out — lets callers pass an experiment's
+        possibly-unset ``source_dataset_id``/``target_dataset_id`` directly."""
+        if dataset_id is None:
+            return None
+        return self._datasets.get(dataset_id)
+
     def delete_dataset(self, dataset_id: int) -> bool:
         return self._datasets.delete(dataset_id)
 

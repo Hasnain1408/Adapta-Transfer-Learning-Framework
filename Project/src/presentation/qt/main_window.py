@@ -33,6 +33,7 @@ from PyQt5.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabBar,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -41,7 +42,7 @@ from PyQt5.QtWidgets import (
 from application.authentication_use_case import AuthenticationUseCase
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
-from domain.entities import ExperimentRecord, User, UserRole
+from domain.entities import ExperimentHistoryEntry, ExperimentRecord, User, UserRole
 from domain.models import (
     BatchTransferLearningRequest,
     BatchTransferLearningResult,
@@ -52,7 +53,9 @@ from domain.models import (
 from presentation.qt.auth_dialogs import AuthDialog
 from presentation.qt.charts_widget import AnalyticsChartsWidget
 from presentation.qt.database_dialogs import DatasetRegistryDialog, UserManagerDialog
+from presentation.qt.experiment_detail_view import ExperimentDetailView
 from presentation.qt.history_tab import HistoryTab
+from presentation.qt.metric_card import MetricCard
 from presentation.qt import message_box
 from presentation.qt.style import DARK_PALETTE, LIGHT_PALETTE, build_style_sheet
 from presentation.qt.title_bar import TitleBar, install_title_bar_on_grid
@@ -142,44 +145,6 @@ class _ClickableLineEdit(QLineEdit):
         super().mousePressEvent(event)
 
 
-class MetricCard(QFrame):
-    """A single headline metric, shown as a titled value tile.
-
-    ``accent`` selects the colour of the card's top border (see the
-    ``QFrame#metricCard[accent=...]`` rules in ``style.py``) so the row of
-    stat cards reads as a set of distinct, colour-coded tiles rather than
-    identical grey boxes.
-    """
-
-    def __init__(self, title: str, tooltip: str = "", accent: str = "teal") -> None:
-        super().__init__()
-        self.setObjectName("metricCard")
-        self.setProperty("accent", accent)
-        if tooltip:
-            self.setToolTip(tooltip)
-
-        self._value_label = QLabel("—")
-        self._value_label.setObjectName("metricCardValue")
-        self._value_label.setProperty("placeholder", True)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("metricCardTitle")
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 11)
-        layout.setSpacing(2)
-        layout.addWidget(title_label)
-        layout.addWidget(self._value_label)
-
-    def set_value(self, text: str | None) -> None:
-        is_placeholder = text is None
-        self._value_label.setText("—" if is_placeholder else text)
-        self._value_label.setProperty("placeholder", is_placeholder)
-        # Dynamic properties only affect QSS after a re-polish.
-        self._value_label.style().unpolish(self._value_label)
-        self._value_label.style().polish(self._value_label)
-
-
 class FullScreenViewer(QMainWindow):
     """Generic standalone window that borrows the results tab widget.
 
@@ -258,6 +223,9 @@ class MainWindow(QMainWindow):
         self._palette = DARK_PALETTE
         self._status_key = "neutral"
         self._history_tab_index = -1
+        #: experiment id -> its open detail tab widget, so a second click on
+        #: the same row raises the existing tab instead of duplicating it.
+        self._experiment_detail_tabs: dict[int, ExperimentDetailView] = {}
 
         self.setWindowTitle("Adapta: Transfer Learning Studio")
         self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets" / "app_icon.svg")))
@@ -840,6 +808,11 @@ class MainWindow(QMainWindow):
     def _build_results_tabs(self) -> QTabWidget:
         self._results_tabs = QTabWidget()
         self._results_tabs.setDocumentMode(True)
+        # Closable so a per-experiment detail tab (opened from History) can be
+        # dismissed — the fixed tabs below have their close button hidden
+        # individually right after being added, so only those stay closable.
+        self._results_tabs.setTabsClosable(True)
+        self._results_tabs.tabCloseRequested.connect(self._close_results_tab)
 
         predictions_page = QWidget()
         predictions_layout = QVBoxLayout(predictions_page)
@@ -883,6 +856,11 @@ class MainWindow(QMainWindow):
         self._results_tabs.addTab(self._history_tab, "History")
         self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
         self._history_tab_index = self._results_tabs.indexOf(self._history_tab)
+
+        # These six are permanent — only dynamically opened experiment-detail
+        # tabs (see _open_experiment_detail_tab) are meant to be closable.
+        for index in range(self._results_tabs.count()):
+            self._results_tabs.tabBar().setTabButton(index, QTabBar.RightSide, None)
         self._set_history_visible(self._current_user is not None)
 
         self._results_tabs.setCornerWidget(self._results_fullscreen_button, Qt.TopRightCorner)
@@ -957,6 +935,7 @@ class MainWindow(QMainWindow):
         self._refresh_history_action.triggered.connect(self._show_history)
         self._database_info_action.triggered.connect(self._show_database_info)
         self._history_tab.configuration_requested.connect(self._apply_configuration)
+        self._history_tab.detail_requested.connect(self._open_experiment_detail_tab)
 
     # ------------------------------------------------------------------
     # Configuration state
@@ -1041,6 +1020,14 @@ class MainWindow(QMainWindow):
             if index < 0:
                 insert_at = min(self._history_tab_index, self._results_tabs.count())
                 self._results_tabs.insertTab(insert_at, self._history_tab, "History")
+                # insertTab always gives a fresh tab a close button when the
+                # widget is tabsClosable — History is permanent like the other
+                # five fixed tabs, so strip it (as _build_results_tabs does
+                # for the initial six) or it would show a close "x" that,
+                # if clicked, deletes the singleton HistoryTab widget.
+                self._results_tabs.tabBar().setTabButton(
+                    insert_at, QTabBar.RightSide, None
+                )
         elif index >= 0:
             if self._results_tabs.currentIndex() == index:
                 self._results_tabs.setCurrentIndex(0)
@@ -1212,6 +1199,58 @@ class MainWindow(QMainWindow):
         self._set_status(
             f"Loaded configuration from experiment #{experiment.id}", "neutral"
         )
+
+    def _open_experiment_detail_tab(self, entry: ExperimentHistoryEntry) -> None:
+        """Open (or raise) a closable tab with every field of *entry*.
+
+        Joins in the source/target ``DatasetRecord`` rows, which
+        ``ExperimentHistoryEntry`` doesn't carry (it only denormalises the
+        domain *names*) — this is the one place that needs the full rows.
+        """
+        experiment_id = entry.experiment.id
+        if experiment_id is None or self._catalog is None:
+            return
+
+        existing = self._experiment_detail_tabs.get(experiment_id)
+        if existing is not None:
+            index = self._results_tabs.indexOf(existing)
+            if index >= 0:
+                self._results_tabs.setCurrentIndex(index)
+                return
+            # The tab was closed without going through _close_results_tab
+            # (shouldn't normally happen); fall through and rebuild it.
+            del self._experiment_detail_tabs[experiment_id]
+
+        try:
+            source_dataset = self._catalog.get_dataset(entry.experiment.source_dataset_id)
+            target_dataset = self._catalog.get_dataset(entry.experiment.target_dataset_id)
+        except Exception:  # noqa: BLE001 - the detail view just shows "—" instead
+            source_dataset = None
+            target_dataset = None
+
+        view = ExperimentDetailView(entry, source_dataset, target_dataset, self._palette)
+        index = self._results_tabs.addTab(view, f"Experiment #{experiment_id}")
+        self._experiment_detail_tabs[experiment_id] = view
+        self._results_tabs.setCurrentIndex(index)
+
+    def _close_results_tab(self, index: int) -> None:
+        """Handle the tab strip's close button — only detail tabs have one.
+
+        Guards against ever deleting one of the six permanent tabs (their
+        close buttons are stripped, but this is a second line of defence):
+        only a widget actually tracked in ``_experiment_detail_tabs`` gets
+        removed and deleted.
+        """
+        widget = self._results_tabs.widget(index)
+        experiment_id = next(
+            (eid for eid, view in self._experiment_detail_tabs.items() if view is widget),
+            None,
+        )
+        if experiment_id is None:
+            return
+        del self._experiment_detail_tabs[experiment_id]
+        self._results_tabs.removeTab(index)
+        widget.deleteLater()
 
     # ------------------------------------------------------------------
     # Theming

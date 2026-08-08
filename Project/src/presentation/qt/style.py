@@ -456,6 +456,32 @@ QLabel#metricCardValue[placeholder="true"] {
     color: $text_disabled;
 }
 
+/* ---------- Status badge (experiment detail view) ---------- */
+QLabel#statusBadge {
+    border-radius: 11px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    background-color: $surface_alt;
+    color: $text_secondary;
+}
+QLabel#statusBadge[status="completed"] {
+    background-color: $accent_soft;
+    color: $success;
+}
+QLabel#statusBadge[status="failed"] {
+    background-color: $accent_soft;
+    color: $danger;
+}
+QLabel#statusBadge[status="running"] {
+    background-color: $accent_soft;
+    color: $warning;
+}
+QLabel#statusBadge[status="pending"] {
+    background-color: $accent_soft;
+    color: $text_muted;
+}
+
 /* ---------- Tabs ---------- */
 QTabWidget::pane {
     background-color: $surface;
