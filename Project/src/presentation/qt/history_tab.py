@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from domain.entities import ExperimentHistoryEntry, ExperimentStatus, User
+from presentation.qt import message_box
 
 #: ``(header, width hint)``. ``None`` means the column stretches.
 _COLUMNS: list[tuple[str, int | None]] = [
@@ -259,7 +260,7 @@ class HistoryTab(QWidget):
         if entry is None or self._catalog is None or entry.experiment.id is None:
             return
 
-        confirmed = QMessageBox.question(
+        confirmed = message_box.question(
             self,
             "Delete Experiment",
             f"Delete experiment #{entry.experiment.id} "
@@ -274,7 +275,7 @@ class HistoryTab(QWidget):
         try:
             self._catalog.delete_experiment(entry.experiment.id)
         except Exception as exc:  # noqa: BLE001 - shown verbatim
-            QMessageBox.critical(
+            message_box.critical(
                 self, "Delete Failed", f"The experiment could not be deleted:\n\n{exc}"
             )
             return

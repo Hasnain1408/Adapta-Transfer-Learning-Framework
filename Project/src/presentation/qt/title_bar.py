@@ -17,7 +17,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QIcon, QMouseEvent
-from PyQt5.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QWidget
+from PyQt5.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 _ASSETS = Path(__file__).parent / "assets"
 
@@ -45,12 +45,15 @@ class TitleBar(QWidget):
 
         layout.addStretch(1)
 
-        self._minimize_button = self._make_button("titleBarMinButton", "−", self._window.showMinimized)
+        self._maximize_button = None
+    
+        minimize_button = self._make_button("titleBarMinButton", "−", self._window.showMinimized)
         self._maximize_button = self._make_button("titleBarMaxButton", "□", self._toggle_maximize)
-        self._close_button = self._make_button("titleBarCloseButton", "✕", self._window.close)
+        layout.addWidget(minimize_button)
+        layout.addWidget(self._maximize_button)
 
-        for button in (self._minimize_button, self._maximize_button, self._close_button):
-            layout.addWidget(button)
+        close_button = self._make_button("titleBarCloseButton", "✕", self._window.close)
+        layout.addWidget(close_button)
 
     def _make_button(self, object_name: str, glyph: str, slot) -> QPushButton:
         button = QPushButton(glyph)
@@ -62,13 +65,16 @@ class TitleBar(QWidget):
         return button
 
     def _toggle_maximize(self) -> None:
+        if self._maximize_button is None:
+            return
         if self._window.isMaximized():
             self._window.showNormal()
         else:
             self._window.showMaximized()
 
     def refresh_maximize_glyph(self) -> None:
-        self._maximize_button.setText("❐" if self._window.isMaximized() else "□")
+        if self._maximize_button is not None:
+            self._maximize_button.setText("❐" if self._window.isMaximized() else "□")
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton:
@@ -85,3 +91,44 @@ class TitleBar(QWidget):
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
+
+
+def install_title_bar(window: QWidget, title: str, body: QWidget) -> TitleBar:
+    """Make *window* frameless and stack a :class:`TitleBar` above *body*.
+
+    Shared by the app's ``QDialog`` windows so each one doesn't hand-roll the
+    same frameless-flag + outer-layout wiring. ``MainWindow`` doesn't use
+    this — it already owns a menu bar and nests the title bar above it via
+    ``QMainWindow.setMenuWidget`` instead.
+    """
+    window.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+    title_bar = TitleBar(window, title)
+    outer = QVBoxLayout(window)
+    outer.setContentsMargins(0, 0, 0, 0)
+    outer.setSpacing(0)
+    outer.addWidget(title_bar)
+    outer.addWidget(body, 1)
+    return title_bar
+
+
+def install_title_bar_on_grid(window: QWidget, title: str) -> TitleBar:
+    """Frameless a window whose layout is a pre-built ``QGridLayout``.
+
+    ``QFileDialog`` (used with ``DontUseNativeDialog``) lays itself out this
+    way at construction time — there is no "content so far" widget to lift
+    into a ``body`` the way :func:`install_title_bar` does, since Qt owns
+    that grid internally. Instead every existing item is shifted down one
+    row and the title bar is inserted spanning the full width at row 0.
+    """
+    window.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+    layout = window.layout()
+    column_count = layout.columnCount()
+
+    positions = [layout.getItemPosition(i) for i in range(layout.count())]
+    items = [layout.takeAt(i) for i in reversed(range(layout.count()))][::-1]
+    for item, (row, column, row_span, column_span) in zip(items, positions):
+        layout.addItem(item, row + 1, column, row_span, column_span)
+
+    title_bar = TitleBar(window, title)
+    layout.addWidget(title_bar, 0, 0, 1, column_count)
+    return title_bar
