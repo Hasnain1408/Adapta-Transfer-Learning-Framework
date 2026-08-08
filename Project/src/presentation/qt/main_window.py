@@ -53,8 +53,9 @@ from presentation.qt.auth_dialogs import AuthDialog
 from presentation.qt.charts_widget import AnalyticsChartsWidget
 from presentation.qt.database_dialogs import DatasetRegistryDialog, UserManagerDialog
 from presentation.qt.history_tab import HistoryTab
+from presentation.qt import message_box
 from presentation.qt.style import DARK_PALETTE, LIGHT_PALETTE, build_style_sheet
-from presentation.qt.title_bar import TitleBar
+from presentation.qt.title_bar import TitleBar, install_title_bar_on_grid
 from presentation.qt.worker import BatchTransferLearningWorker, TransferLearningWorker
 
 #: ``(display label, value)``. The value is what the use case dispatches on, so
@@ -106,6 +107,25 @@ DATASET_FILTER = (
 #: Rows rendered in the transformed-features preview. Wide matrices make full
 #: rendering slow, so the cap is surfaced in the caption rather than hidden.
 FEATURE_PREVIEW_ROWS = 1000
+
+
+def _dataset_class_names(labels) -> list[str]:
+    """Distinct label values, sorted, as strings — mirrors the catalogue's
+    own class-name derivation so the Dataset Summary tab and Dataset
+    Registry agree on what "classes" means for the same file."""
+    if labels is None:
+        return []
+    return sorted({str(value) for value in labels})
+
+
+def _dataset_dtype_summary(dtypes: list[str]) -> str:
+    """Compact ``"float64 x24, int64 x2"``-style summary for a table cell."""
+    if not dtypes:
+        return ""
+    counts: dict[str, int] = {}
+    for dtype in dtypes:
+        counts[dtype] = counts.get(dtype, 0) + 1
+    return ", ".join(f"{dtype} x{count}" for dtype, count in counts.items())
 
 
 class _ClickableLineEdit(QLineEdit):
@@ -181,28 +201,23 @@ class FullScreenViewer(QMainWindow):
         self.setMinimumSize(800, 540)
         self.setStyleSheet(stylesheet)
         self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
 
-        title_label = QLabel(title)
-        title_label.setObjectName("fullscreenTitleLabel")
+        title_bar = TitleBar(self, f"{title} — Full Screen")
 
-        close_btn = QPushButton("✕  Close")
-        close_btn.setObjectName("fullscreenCloseButton")
-        close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.clicked.connect(self.close)
-
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.addWidget(title_label)
-        top_row.addStretch(1)
-        top_row.addWidget(close_btn)
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(18, 14, 18, 14)
+        body_layout.setSpacing(10)
+        body_layout.addWidget(content, 1)
 
         container = QWidget()
         container.setObjectName("centralWidget")
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(10)
-        layout.addLayout(top_row)
-        layout.addWidget(content, 1)
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(title_bar)
+        outer.addWidget(body, 1)
         self.setCentralWidget(container)
 
         self.showMaximized()
@@ -395,11 +410,29 @@ class MainWindow(QMainWindow):
         )
         self._features_table = self._build_table([])
         self._summary_table = self._build_table(
-            ["Dataset", "Samples", "Features", "Label Column", "Feature Names"]
+            [
+                "Dataset",
+                "Samples",
+                "Features",
+                "Label Column",
+                "Classes",
+                "Data Types",
+                "Missing Values",
+                "Feature Names",
+            ]
         )
         self._align_headers(
             self._summary_table,
-            [Qt.AlignLeft, Qt.AlignRight, Qt.AlignRight, Qt.AlignLeft, Qt.AlignLeft],
+            [
+                Qt.AlignLeft,
+                Qt.AlignRight,
+                Qt.AlignRight,
+                Qt.AlignLeft,
+                Qt.AlignRight,
+                Qt.AlignLeft,
+                Qt.AlignRight,
+                Qt.AlignLeft,
+            ],
         )
         self._summary_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
@@ -1021,7 +1054,7 @@ class MainWindow(QMainWindow):
 
     def _show_login_dialog(self) -> None:
         if self._auth is None:
-            QMessageBox.information(
+            message_box.information(
                 self,
                 "Log In Unavailable",
                 "Sign-in is only available when the database connection is active.",
@@ -1045,7 +1078,7 @@ class MainWindow(QMainWindow):
         self._update_context_label()
         self._update_auth_ui()
         self._set_status("You have been logged out.", "neutral")
-        QMessageBox.information(
+        message_box.information(
             self,
             "Logged Out",
             "You have been logged out. You can keep running experiments, but history stays hidden until you log in again.",
@@ -1121,7 +1154,7 @@ class MainWindow(QMainWindow):
 
     def _show_database_info(self) -> None:
         if self._catalog is None:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Database Unavailable",
                 "No PostgreSQL connection.\n\n"
@@ -1132,10 +1165,10 @@ class MainWindow(QMainWindow):
         try:
             stats = self._catalog.statistics()
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Database Error", str(exc))
+            message_box.critical(self, "Database Error", str(exc))
             return
 
-        QMessageBox.information(
+        message_box.information(
             self,
             "Database Connection",
             "<b>PostgreSQL connected</b>"
@@ -1258,6 +1291,7 @@ class MainWindow(QMainWindow):
         dialog.setFileMode(QFileDialog.ExistingFile)
         dialog.setAcceptMode(QFileDialog.AcceptOpen)
         dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, title)
         if dialog.exec_() == QDialog.Accepted:
             selected_files = dialog.selectedFiles()
             if selected_files:
@@ -1278,6 +1312,7 @@ class MainWindow(QMainWindow):
         dialog.setFileMode(QFileDialog.ExistingFiles)
         dialog.setAcceptMode(QFileDialog.AcceptOpen)
         dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, "Select Dataset Files")
         file_paths = []
         if dialog.exec_() == QDialog.Accepted:
             file_paths = dialog.selectedFiles()
@@ -1329,7 +1364,7 @@ class MainWindow(QMainWindow):
         target_path = self._target_input.text().strip()
 
         if not source_path or not target_path:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Missing Dataset",
                 "Select both a source and a target dataset before running.",
@@ -1338,7 +1373,7 @@ class MainWindow(QMainWindow):
 
         missing = [p for p in (source_path, target_path) if not Path(p).is_file()]
         if missing:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Dataset Not Found",
                 "The following path is not a readable file:\n\n" + "\n".join(missing),
@@ -1381,7 +1416,7 @@ class MainWindow(QMainWindow):
         ]
 
         if len(file_paths) < 2:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Not Enough Files",
                 "Add at least two dataset files to run a batch.",
@@ -1390,7 +1425,7 @@ class MainWindow(QMainWindow):
 
         missing = [p for p in file_paths if not Path(p).is_file()]
         if missing:
-            QMessageBox.warning(
+            message_box.warning(
                 self,
                 "Dataset Not Found",
                 "The following path is not a readable file:\n\n" + "\n".join(missing),
@@ -1460,6 +1495,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Experiment Failed")
         box.setText("The transfer learning run could not be completed.")
         box.setInformativeText(message)
+        install_title_bar_on_grid(box, "Experiment Failed")
         box.exec_()
 
     def _on_batch_success(self, batch_result: BatchTransferLearningResult) -> None:
@@ -1501,6 +1537,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle("Batch Run Failed")
         box.setText("The batch run could not be completed.")
         box.setInformativeText(message)
+        install_title_bar_on_grid(box, "Batch Run Failed")
         box.exec_()
 
     def _populate_batch_results(self, batch_result: BatchTransferLearningResult) -> None:
@@ -1566,19 +1603,23 @@ class MainWindow(QMainWindow):
                 f"{total} pairs run — no pair produced evaluable metrics "
                 "(datasets may be missing labels, or every pair failed)."
             )
-
     def _show_about(self) -> None:
-        QMessageBox.about(
-            self,
-            "About Adapta: Transfer Learning Studio",
+        title = "About Adapta: Transfer Learning Studio"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(title)
+        box.setStyleSheet(build_style_sheet(self._palette))
+        box.setText(
             "<b>Adapta: Transfer Learning Studio</b>"
             "<p>Desktop workbench for domain adaptation experiments.</p>"
             "<p>Methods: "
             + ", ".join(self._use_case.method_names)
             + ".<br>Classifiers: k-NN, SVM, Random Forest, Logistic Regression, Decision Tree.<br>"
             "The selected classifier is fitted on the transformed source domain and "
-            "evaluated on the transformed target domain.</p>",
+            "evaluated on the transformed target domain.</p>"
         )
+        install_title_bar_on_grid(box, title)
+        box.exec_()
 
     # ------------------------------------------------------------------
     # Rendering
@@ -1608,25 +1649,38 @@ class MainWindow(QMainWindow):
 
         for row, (role, dataset) in enumerate(rows):
             feature_names = ", ".join(dataset.feature_names)
+            class_names = _dataset_class_names(dataset.labels)
+            dtype_summary = _dataset_dtype_summary(dataset.dtypes)
             values = [
                 role,
                 str(dataset.features.shape[0]),
                 str(dataset.features.shape[1]),
                 dataset.label_name,
+                str(len(class_names)),
+                dtype_summary or "—",
+                str(dataset.missing_value_count),
                 feature_names,
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if column in (1, 2):
+                if column in (1, 2, 4, 6):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                if column == 4:
+                if column == 4 and class_names:
+                    item.setToolTip(f"Classes: {', '.join(class_names)}")
+                elif column == 5 and dtype_summary:
+                    item.setToolTip(", ".join(dataset.dtypes))
+                elif column == 6 and dataset.missing_value_count:
+                    item.setToolTip(
+                        "Missing/non-numeric feature cells were filled with 0.0 at load time."
+                    )
+                elif column == 7:
                     item.setToolTip(feature_names)
                 self._summary_table.setItem(row, column, item)
 
         header = self._summary_table.horizontalHeader()
-        for column in range(4):
+        for column in range(7):
             header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
+        header.setSectionResizeMode(7, QHeaderView.Stretch)
 
         # Only ever two rows, so size to content instead of leaving blank space.
         row_height = self._summary_table.verticalHeader().defaultSectionSize()
@@ -1801,6 +1855,7 @@ class MainWindow(QMainWindow):
         dialog.setAcceptMode(QFileDialog.AcceptSave)
         dialog.setDefaultSuffix("pdf")
         dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, "Export PDF Report")
         if dialog.exec_() != QDialog.Accepted:
             return
 
@@ -1821,13 +1876,13 @@ class MainWindow(QMainWindow):
             printer.setPageMargins(15, 15, 15, 15, QPrinter.Millimeter)
             document.print_(printer)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
-            QMessageBox.critical(
+            message_box.critical(
                 self, "Export Failed", f"The report could not be written:\n\n{exc}"
             )
             return
 
         self._set_status("Report exported", "success")
-        QMessageBox.information(
+        message_box.information(
             self, "Report Exported", f"The PDF report was saved to:\n\n{file_path}"
         )
 
