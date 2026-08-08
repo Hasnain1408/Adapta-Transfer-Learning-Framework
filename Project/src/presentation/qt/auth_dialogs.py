@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
 
 from application.authentication_use_case import AuthenticationError, AuthenticationUseCase
 from domain.entities import User, UserRole
+from presentation.qt import message_box
 from presentation.qt.title_bar import install_title_bar
 
 
@@ -186,22 +187,22 @@ class AuthDialog(QDialog):
         email = self._login_email.text()
         password = self._login_password.text()
         if not email.strip() or not password:
-            QMessageBox.warning(self, "Missing Information", "Enter your email and password.")
+            message_box.warning(self, "Missing Information", "Enter your email and password.")
             return
         try:
             self._user = self._auth.login(email, password)
         except AuthenticationError as exc:
-            QMessageBox.warning(self, "Could Not Log In", str(exc))
+            message_box.warning(self, "Could Not Log In", str(exc))
             return
         except Exception as exc:  # noqa: BLE001 - surfaced verbatim
-            QMessageBox.critical(self, "Database Error", str(exc))
+            message_box.critical(self, "Database Error", str(exc))
             return
         self.accept()
 
     def _do_register(self) -> None:
         password = self._register_password.text()
         if password != self._register_confirm.text():
-            QMessageBox.warning(
+            message_box.warning(
                 self, "Passwords Do Not Match", "Re-type the same password twice."
             )
             return
@@ -213,10 +214,10 @@ class AuthDialog(QDialog):
                 role=self._register_role.currentData(),
             )
         except AuthenticationError as exc:
-            QMessageBox.warning(self, "Could Not Register", str(exc))
+            message_box.warning(self, "Could Not Register", str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Database Error", str(exc))
+            message_box.critical(self, "Database Error", str(exc))
             return
         self.accept()
 
