@@ -53,10 +53,13 @@ from domain.models import (
 from presentation.qt.auth_dialogs import AuthDialog
 from presentation.qt.charts_widget import AnalyticsChartsWidget
 from presentation.qt.database_dialogs import DatasetRegistryDialog, UserManagerDialog
+from presentation.qt.dataset_summary_view import DatasetSummaryView
 from presentation.qt.experiment_detail_view import ExperimentDetailView
 from presentation.qt.history_tab import HistoryTab
 from presentation.qt.metric_card import MetricCard
 from presentation.qt import message_box
+from presentation.qt.pair_detail_view import PairDetailView
+from presentation.qt.result_tables import populate_predictions_table
 from presentation.qt.style import DARK_PALETTE, LIGHT_PALETTE, build_style_sheet
 from presentation.qt.title_bar import TitleBar, install_title_bar_on_grid
 from presentation.qt.worker import BatchTransferLearningWorker, TransferLearningWorker
@@ -110,25 +113,6 @@ DATASET_FILTER = (
 #: Rows rendered in the transformed-features preview. Wide matrices make full
 #: rendering slow, so the cap is surfaced in the caption rather than hidden.
 FEATURE_PREVIEW_ROWS = 1000
-
-
-def _dataset_class_names(labels) -> list[str]:
-    """Distinct label values, sorted, as strings — mirrors the catalogue's
-    own class-name derivation so the Dataset Summary tab and Dataset
-    Registry agree on what "classes" means for the same file."""
-    if labels is None:
-        return []
-    return sorted({str(value) for value in labels})
-
-
-def _dataset_dtype_summary(dtypes: list[str]) -> str:
-    """Compact ``"float64 x24, int64 x2"``-style summary for a table cell."""
-    if not dtypes:
-        return ""
-    counts: dict[str, int] = {}
-    for dtype in dtypes:
-        counts[dtype] = counts.get(dtype, 0) + 1
-    return ", ".join(f"{dtype} x{count}" for dtype, count in counts.items())
 
 
 class _ClickableLineEdit(QLineEdit):
@@ -217,6 +201,7 @@ class MainWindow(QMainWindow):
         self._worker: TransferLearningWorker | BatchTransferLearningWorker | None = None
         self._last_result: TransferLearningResult | None = None
         self._last_request: TransferLearningRequest | None = None
+        self._last_batch_request: BatchTransferLearningRequest | None = None
         self._last_batch_result: BatchTransferLearningResult | None = None
         self._batch_results_tab_index = -1
         self._theme = "dark"
@@ -226,6 +211,9 @@ class MainWindow(QMainWindow):
         #: experiment id -> its open detail tab widget, so a second click on
         #: the same row raises the existing tab instead of duplicating it.
         self._experiment_detail_tabs: dict[int, ExperimentDetailView] = {}
+        #: id(pair) -> its open detail tab widget, same idea as above but for
+        #: batch pairs, which have no persisted id to key on.
+        self._pair_detail_tabs: dict[int, PairDetailView] = {}
 
         self.setWindowTitle("Adapta: Transfer Learning Studio")
         self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets" / "app_icon.svg")))
@@ -377,32 +365,7 @@ class MainWindow(QMainWindow):
             [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter],
         )
         self._features_table = self._build_table([])
-        self._summary_table = self._build_table(
-            [
-                "Dataset",
-                "Samples",
-                "Features",
-                "Label Column",
-                "Classes",
-                "Data Types",
-                "Missing Values",
-                "Feature Names",
-            ]
-        )
-        self._align_headers(
-            self._summary_table,
-            [
-                Qt.AlignLeft,
-                Qt.AlignRight,
-                Qt.AlignRight,
-                Qt.AlignLeft,
-                Qt.AlignRight,
-                Qt.AlignLeft,
-                Qt.AlignRight,
-                Qt.AlignLeft,
-            ],
-        )
-        self._summary_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._summary_view = DatasetSummaryView(self._palette)
 
         self._features_caption = QLabel()
         self._features_caption.setObjectName("captionLabel")
@@ -832,12 +795,6 @@ class MainWindow(QMainWindow):
         features_layout.addWidget(self._features_caption)
         features_layout.addWidget(self._features_table, 1)
 
-        summary_page = QWidget()
-        summary_layout = QVBoxLayout(summary_page)
-        summary_layout.setContentsMargins(12, 10, 12, 12)
-        summary_layout.addWidget(self._summary_table)
-        summary_layout.addStretch(1)
-
         batch_page = QWidget()
         batch_layout = QVBoxLayout(batch_page)
         batch_layout.setContentsMargins(12, 10, 12, 12)
@@ -851,7 +808,7 @@ class MainWindow(QMainWindow):
         self._results_tabs.addTab(predictions_page, "Predictions")
         self._results_tabs.addTab(self._charts_widget, "Visualizations")
         self._results_tabs.addTab(features_page, "Transformed Features")
-        self._results_tabs.addTab(summary_page, "Dataset Summary")
+        self._results_tabs.addTab(self._summary_view, "Dataset Summary")
         self._results_tabs.addTab(batch_page, "Batch Results")
         self._results_tabs.addTab(self._history_tab, "History")
         self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
@@ -936,6 +893,7 @@ class MainWindow(QMainWindow):
         self._database_info_action.triggered.connect(self._show_database_info)
         self._history_tab.configuration_requested.connect(self._apply_configuration)
         self._history_tab.detail_requested.connect(self._open_experiment_detail_tab)
+        self._batch_results_table.itemSelectionChanged.connect(self._open_pair_detail_tab)
 
     # ------------------------------------------------------------------
     # Configuration state
@@ -1074,22 +1032,26 @@ class MainWindow(QMainWindow):
     def _current_user_id(self) -> int | None:
         return self._current_user.id if self._current_user else None
 
-    def _record_run(
-        self, result: TransferLearningResult | None, error_message: str | None
+    def _persist_run(
+        self,
+        request: TransferLearningRequest | None,
+        result: TransferLearningResult | None,
+        error_message: str | None,
     ) -> None:
-        """Persist the run that just finished.
+        """Record one run's datasets and experiment. No history refresh.
 
         Unauthenticated runs (without log in) are NOT recorded into the database.
+        Shared by both the single-run and batch completion handlers, so every
+        pair in a batch is catalogued exactly like a standalone run.
         """
         if (
             self._catalog is None
-            or self._last_request is None
+            or request is None
             or self._current_user is None
             or self._current_user.id is None
         ):
             return
 
-        request = self._last_request
         supported = self._use_case.supported_parameters(request.method_name)
 
         try:
@@ -1103,7 +1065,33 @@ class MainWindow(QMainWindow):
                 )
         except Exception as exc:  # noqa: BLE001
             self._set_status(f"Run not recorded: {exc}", "warning")
+
+    def _record_run(
+        self, result: TransferLearningResult | None, error_message: str | None
+    ) -> None:
+        """Persist the single run that just finished and refresh History."""
+        self._persist_run(self._last_request, result, error_message)
+        self._history_tab.refresh()
+
+    def _record_batch_run(self, batch_result: BatchTransferLearningResult) -> None:
+        """Persist every pair of a batch run as its own experiment/dataset pair."""
+        shared = self._last_batch_request
+        if shared is None:
             return
+
+        for pair in batch_result.pairs:
+            pair_request = TransferLearningRequest(
+                method_name=shared.method_name,
+                source_path=pair.source_path,
+                target_path=pair.target_path,
+                normalization=shared.normalization,
+                standardization=shared.standardization,
+                kernel_type=shared.kernel_type,
+                regularization=shared.regularization,
+                latent_dim=shared.latent_dim,
+                classifier=shared.classifier,
+            )
+            self._persist_run(pair_request, pair.result, pair.error)
 
         self._history_tab.refresh()
 
@@ -1233,22 +1221,64 @@ class MainWindow(QMainWindow):
         self._experiment_detail_tabs[experiment_id] = view
         self._results_tabs.setCurrentIndex(index)
 
+    def _open_pair_detail_tab(self) -> None:
+        """Open (or raise) a closable tab for the row selected in Batch Results.
+
+        Mirrors ``_open_experiment_detail_tab``'s "select a row, get a tab"
+        pattern. Fires on every selection change, so re-selecting an
+        already-open pair's row raises its tab instead of duplicating it.
+        Batch pairs have no persisted id (unlike an ``ExperimentRecord``), so
+        the pair object's identity is the key instead.
+        """
+        if self._last_batch_result is None:
+            return
+        row = self._batch_results_table.currentRow()
+        if not (0 <= row < len(self._last_batch_result.pairs)):
+            return
+        pair = self._last_batch_result.pairs[row]
+        pair_key = id(pair)
+
+        existing = self._pair_detail_tabs.get(pair_key)
+        if existing is not None:
+            index = self._results_tabs.indexOf(existing)
+            if index >= 0:
+                self._results_tabs.setCurrentIndex(index)
+                return
+            del self._pair_detail_tabs[pair_key]
+
+        view = PairDetailView(pair, self._palette)
+        source_name = Path(pair.source_path).stem
+        target_name = Path(pair.target_path).stem
+        index = self._results_tabs.addTab(view, f"{source_name} → {target_name}")
+        self._pair_detail_tabs[pair_key] = view
+        self._results_tabs.setCurrentIndex(index)
+
     def _close_results_tab(self, index: int) -> None:
         """Handle the tab strip's close button — only detail tabs have one.
 
         Guards against ever deleting one of the six permanent tabs (their
         close buttons are stripped, but this is a second line of defence):
-        only a widget actually tracked in ``_experiment_detail_tabs`` gets
-        removed and deleted.
+        only a widget actually tracked in ``_experiment_detail_tabs`` or
+        ``_pair_detail_tabs`` gets removed and deleted.
         """
         widget = self._results_tabs.widget(index)
         experiment_id = next(
             (eid for eid, view in self._experiment_detail_tabs.items() if view is widget),
             None,
         )
-        if experiment_id is None:
+        if experiment_id is not None:
+            del self._experiment_detail_tabs[experiment_id]
+            self._results_tabs.removeTab(index)
+            widget.deleteLater()
             return
-        del self._experiment_detail_tabs[experiment_id]
+
+        pair_key = next(
+            (key for key, view in self._pair_detail_tabs.items() if view is widget),
+            None,
+        )
+        if pair_key is None:
+            return
+        del self._pair_detail_tabs[pair_key]
         self._results_tabs.removeTab(index)
         widget.deleteLater()
 
@@ -1482,6 +1512,10 @@ class MainWindow(QMainWindow):
             classifier=self._classifier_combo.currentData(),
         )
 
+        # Kept so the completion handler can record each pair as its own
+        # experiment, even if the user edits the form while the worker runs.
+        self._last_batch_request = request
+
         pair_count = len(file_paths) * (len(file_paths) - 1)
         self._set_running(True)
         self._set_status(f"Running batch ({pair_count} pairs)…", "warning")
@@ -1568,6 +1602,7 @@ class MainWindow(QMainWindow):
         self._results_stack.setCurrentIndex(1)
         if self._batch_results_tab_index >= 0:
             self._results_tabs.setCurrentIndex(self._batch_results_tab_index)
+        self._record_batch_run(batch_result)
 
     def _on_batch_error(self, message: str) -> None:
         self._set_status("Batch Failed", "danger")
@@ -1683,54 +1718,12 @@ class MainWindow(QMainWindow):
         )
 
     def _show_dataset_summary(self, result: TransferLearningResult) -> None:
-        rows = [("Source", result.source_dataset), ("Target", result.target_dataset)]
-        self._summary_table.setRowCount(len(rows))
-
-        for row, (role, dataset) in enumerate(rows):
-            feature_names = ", ".join(dataset.feature_names)
-            class_names = _dataset_class_names(dataset.labels)
-            dtype_summary = _dataset_dtype_summary(dataset.dtypes)
-            values = [
-                role,
-                str(dataset.features.shape[0]),
-                str(dataset.features.shape[1]),
-                dataset.label_name,
-                str(len(class_names)),
-                dtype_summary or "—",
-                str(dataset.missing_value_count),
-                feature_names,
-            ]
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                if column in (1, 2, 4, 6):
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                if column == 4 and class_names:
-                    item.setToolTip(f"Classes: {', '.join(class_names)}")
-                elif column == 5 and dtype_summary:
-                    item.setToolTip(", ".join(dataset.dtypes))
-                elif column == 6 and dataset.missing_value_count:
-                    item.setToolTip(
-                        "Missing/non-numeric feature cells were filled with 0.0 at load time."
-                    )
-                elif column == 7:
-                    item.setToolTip(feature_names)
-                self._summary_table.setItem(row, column, item)
-
-        header = self._summary_table.horizontalHeader()
-        for column in range(7):
-            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.Stretch)
-
-        # Only ever two rows, so size to content instead of leaving blank space.
-        row_height = self._summary_table.verticalHeader().defaultSectionSize()
-        self._summary_table.setFixedHeight(header.height() + len(rows) * row_height + 2)
+        self._summary_view.update_result(result)
 
     def _show_predictions(self, result: TransferLearningResult) -> None:
-        table = self._predictions_table
-        table.clearContents()
-
         if result.target_predictions is None:
-            table.setRowCount(0)
+            self._predictions_table.clearContents()
+            self._predictions_table.setRowCount(0)
             self._incorrect_only_check.setEnabled(False)
             self._correct_only_check.setEnabled(False)
             self._results_tabs.setTabEnabled(0, False)
@@ -1742,33 +1735,7 @@ class MainWindow(QMainWindow):
         self._correct_only_check.setEnabled(True)
         self._results_tabs.setCurrentIndex(0)
 
-        correct_brush = QBrush(QColor(self._palette["success"]))
-        wrong_brush = QBrush(QColor(self._palette["danger"]))
-
-        row_count = len(result.target_predictions)
-        table.setRowCount(row_count)
-
-        for row in range(row_count):
-            is_correct = result.prediction_correctness[row] == "Right"
-            cells = [
-                f"Sample {row + 1}",
-                str(result.target_actuals[row]),
-                str(result.target_predictions[row]),
-                "✓ Correct" if is_correct else "✗ Incorrect",
-            ]
-            for column, value in enumerate(cells):
-                item = QTableWidgetItem(value)
-                if column:
-                    item.setTextAlignment(Qt.AlignCenter)
-                if column == 3:
-                    item.setForeground(correct_brush if is_correct else wrong_brush)
-                table.setItem(row, column, item)
-
-        header = table.horizontalHeader()
-        for column in range(3):
-            header.setSectionResizeMode(column, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
-
+        populate_predictions_table(self._predictions_table, result, self._palette)
         self._apply_prediction_filter()
 
     def _on_prediction_filter_toggled(self) -> None:

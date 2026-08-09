@@ -672,6 +672,19 @@ QFrame#vDivider {
     border: none;
 }
 
+/* ---------- Scroll areas ---------- */
+/* Unstyled, QScrollArea (and the viewport widget Qt creates for it) paint
+   with the platform's base palette colour rather than the app's dark/light
+   surface, which shows through as a mismatched panel wherever a detail view
+   is wrapped in one for vertical scrolling. */
+QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
 /* ---------- Scroll bars ---------- */
 QScrollBar:vertical {
     background: transparent;
