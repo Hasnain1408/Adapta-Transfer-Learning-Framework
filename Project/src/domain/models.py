@@ -14,9 +14,10 @@ class TransferLearningRequest:
     kernel_type: str = "linear"
     regularization: float = 1.0
     latent_dim: int = 10
+    mu: float = 1.0
     classifier: str = "k-NN"
-  
-    
+
+
 @dataclass(frozen=True)
 class EvaluationMetrics:
     accuracy: float
@@ -71,6 +72,7 @@ class BatchTransferLearningRequest:
     kernel_type: str = "linear"
     regularization: float = 1.0
     latent_dim: int = 10
+    mu: float = 1.0
     classifier: str = "k-NN"
 
 
