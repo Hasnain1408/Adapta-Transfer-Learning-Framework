@@ -311,9 +311,25 @@ class MainWindowSessionMixin:
             target_dataset = None
 
         view = ExperimentDetailView(entry, source_dataset, target_dataset, self._palette)
+        view.export_requested.connect(
+            lambda: self._export_history_report(entry, source_dataset, target_dataset)
+        )
         index = self._results_tabs.addTab(view, f"Experiment #{experiment_id}")
         self._experiment_detail_tabs[experiment_id] = view
         self._results_tabs.setCurrentIndex(index)
+
+    def _export_history_entry(self, entry: ExperimentHistoryEntry) -> None:
+        """Export straight from the History table's toolbar, without going
+        through a detail tab first — same dataset lookup as opening one."""
+        if self._catalog is None:
+            return
+        try:
+            source_dataset = self._catalog.get_dataset(entry.experiment.source_dataset_id)
+            target_dataset = self._catalog.get_dataset(entry.experiment.target_dataset_id)
+        except Exception:  # noqa: BLE001 - the report just shows "—" instead
+            source_dataset = None
+            target_dataset = None
+        self._export_history_report(entry, source_dataset, target_dataset)
 
     def _open_pair_detail_tab(self) -> None:
         """Open (or raise) a closable tab for the row selected in Batch Results.
@@ -341,6 +357,7 @@ class MainWindowSessionMixin:
             del self._pair_detail_tabs[pair_key]
 
         view = PairDetailView(pair, self._palette)
+        view.export_requested.connect(lambda: self._export_pair_report(pair, view.chart_html()))
         source_name = Path(pair.source_path).stem
         target_name = Path(pair.target_path).stem
         index = self._results_tabs.addTab(view, f"{source_name} → {target_name}")

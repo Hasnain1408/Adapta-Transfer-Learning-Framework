@@ -1,9 +1,11 @@
 """PDF report export for ``MainWindow``.
 
-Gathers the current run's configuration from the sidebar widgets, hands it
-to the pure ``report.build_report_html`` along with the last result and the
-rendered chart markup, then prints the resulting HTML to a PDF via
-``QTextDocument``/``QPrinter``.
+Every export path (a live single run, a live batch, a replayed history
+entry, or one pair opened from a batch's detail tab) funnels through
+:meth:`_write_pdf_report`: pick sections in ``ExportOptionsDialog``, build
+the HTML with the matching function in ``report.py``, then print it via
+``QTextDocument``/``QPrinter``. The four ``_export_*`` methods only differ
+in what they hand to ``report.py`` — none of them touch Qt printing directly.
 """
 
 from __future__ import annotations
@@ -14,41 +16,135 @@ from PyQt5.QtGui import QTextDocument
 from PyQt5.QtPrintSupport import QPrinter
 from PyQt5.QtWidgets import QDialog, QFileDialog
 
+from domain.entities import DatasetRecord, ExperimentHistoryEntry
+from domain.models import PairTransferLearningResult
 from presentation.qt import message_box
-from presentation.qt.report import build_report_html
+from presentation.qt.export_options_dialog import ExportOptionsDialog
+from presentation.qt.main_window_ui import KERNEL_OPTIONS
+from presentation.qt.report import (
+    build_batch_report_html,
+    build_history_report_html,
+    build_report_html,
+)
 from presentation.qt.style import build_style_sheet
 from presentation.qt.title_bar import install_title_bar_on_grid
 
+_KERNEL_LABELS = {value: label for label, value in KERNEL_OPTIONS}
+
 
 class MainWindowReportMixin:
-    """PDF export of the last completed single-run result."""
+    """PDF export for live runs, batch runs, and replayed history entries."""
+
+    # ------------------------------------------------------------------
+    # Config-row builders
+    # ------------------------------------------------------------------
+    def _config_rows_common(
+        self,
+        method_name: str,
+        classifier: str,
+        normalization: str,
+        standardization: str,
+        kernel_type: str,
+        regularization: float,
+        latent_dim: int,
+        mu: float,
+    ) -> list[tuple[str, str]]:
+        supported = self._use_case.supported_parameters(method_name)
+        rows = [
+            ("Method", method_name),
+            ("Classifier", classifier),
+            ("Normalization", normalization),
+            ("Standardization", standardization),
+        ]
+        if "kernel_type" in supported:
+            rows.append(("Kernel", _KERNEL_LABELS.get(kernel_type, kernel_type)))
+        if "regularization" in supported:
+            rows.append(("Regularization (lambda)", f"{regularization:g}"))
+        if "latent_dim" in supported:
+            rows.append(("Latent dimensions", str(latent_dim)))
+        if "mu" in supported:
+            rows.append(("Mu", f"{mu:g}"))
+        return rows
 
     def _report_config_rows(self) -> list[tuple[str, str]]:
-        config_rows = [
-            ("Method", self._method_combo.currentText()),
-            ("Classifier", self._classifier_combo.currentText()),
-            ("Source dataset", Path(self._source_input.text().strip()).name),
-            ("Target dataset", Path(self._target_input.text().strip()).name),
-            ("Normalization", self._norm_combo.currentText()),
-            ("Standardization", self._std_combo.currentText()),
-        ]
-        if self._kernel_combo.isEnabled():
-            config_rows.append(("Kernel", self._kernel_combo.currentText()))
-        if self._reg_input.isEnabled():
-            config_rows.append(("Regularization (lambda)", f"{self._reg_input.value():g}"))
-        if self._dim_input.isEnabled():
-            config_rows.append(("Latent dimensions", str(self._dim_input.value())))
-        return config_rows
+        request = self._last_request
+        if request is None:
+            return []
+        rows = self._config_rows_common(
+            request.method_name,
+            request.classifier,
+            request.normalization,
+            request.standardization,
+            request.kernel_type,
+            request.regularization,
+            request.latent_dim,
+            request.mu,
+        )
+        rows.insert(2, ("Source dataset", Path(request.source_path).name))
+        rows.insert(3, ("Target dataset", Path(request.target_path).name))
+        return rows
 
-    def _export_pdf_report(self) -> None:
-        result = self._last_result
-        if result is None:
-            return
+    def _batch_report_config_rows(self) -> list[tuple[str, str]]:
+        request = self._last_batch_request
+        if request is None:
+            return []
+        rows = self._config_rows_common(
+            request.method_name,
+            request.classifier,
+            request.normalization,
+            request.standardization,
+            request.kernel_type,
+            request.regularization,
+            request.latent_dim,
+            request.mu,
+        )
+        pair_count = len(request.file_paths) * (len(request.file_paths) - 1)
+        rows.insert(2, ("Files in batch", str(len(request.file_paths))))
+        rows.insert(3, ("Pairs run", str(pair_count)))
+        return rows
 
+    def _pair_config_rows(self, pair: PairTransferLearningResult) -> list[tuple[str, str]]:
+        request = self._last_batch_request
+        if request is None:
+            return []
+        rows = self._config_rows_common(
+            request.method_name,
+            request.classifier,
+            request.normalization,
+            request.standardization,
+            request.kernel_type,
+            request.regularization,
+            request.latent_dim,
+            request.mu,
+        )
+        rows.insert(2, ("Source dataset", Path(pair.source_path).name))
+        rows.insert(3, ("Target dataset", Path(pair.target_path).name))
+        return rows
+
+    def _performed_by(self) -> str:
+        return self._current_user.name if self._current_user else "Not signed in"
+
+    # ------------------------------------------------------------------
+    # Shared plumbing
+    # ------------------------------------------------------------------
+    def _pick_sections(
+        self, *, visualizations_available: bool, unavailable_reason: str = ""
+    ) -> set[str] | None:
+        dialog = ExportOptionsDialog(
+            build_style_sheet(self._palette),
+            visualizations_available=visualizations_available,
+            unavailable_reason=unavailable_reason,
+            parent=self,
+        )
+        if dialog.exec_() != QDialog.Accepted:
+            return None
+        return dialog.selected_sections()
+
+    def _write_pdf_report(self, html: str, default_filename: str) -> None:
         dialog = QFileDialog(
             self,
             "Export PDF Report",
-            str(Path.cwd() / "Transfer_Learning_Report.pdf"),
+            str(Path.cwd() / default_filename),
             "PDF Files (*.pdf)",
         )
         dialog.setOption(QFileDialog.DontUseNativeDialog, True)
@@ -67,12 +163,6 @@ class MainWindowReportMixin:
             file_path += ".pdf"
 
         try:
-            html = build_report_html(
-                result,
-                self._report_config_rows(),
-                self._palette,
-                self._charts_widget.render_to_base64_html(),
-            )
             document = QTextDocument()
             document.setHtml(html)
 
@@ -90,6 +180,99 @@ class MainWindowReportMixin:
         self._set_status("Report exported", "success")
         message_box.information(
             self, "Report Exported", f"The PDF report was saved to:\n\n{file_path}"
+        )
+
+    # ------------------------------------------------------------------
+    # Export entry points
+    # ------------------------------------------------------------------
+    def _export_pdf_report(self) -> None:
+        """Export whichever live result — single run or batch — finished most
+        recently, per ``self._last_run_kind`` (set by the success handlers in
+        ``main_window_run.py``)."""
+        if self._last_run_kind == "batch":
+            self._export_batch_report()
+        else:
+            self._export_single_report()
+
+    def _export_single_report(self) -> None:
+        result = self._last_result
+        if result is None:
+            return
+        sections = self._pick_sections(visualizations_available=True)
+        if sections is None:
+            return
+        html = build_report_html(
+            result,
+            self._report_config_rows(),
+            self._palette,
+            self._charts_widget.render_to_base64_html(),
+            self._performed_by(),
+            sections,
+        )
+        self._write_pdf_report(html, "Transfer_Learning_Report.pdf")
+
+    def _export_batch_report(self) -> None:
+        batch_result = self._last_batch_result
+        if batch_result is None:
+            return
+        sections = self._pick_sections(
+            visualizations_available=False,
+            unavailable_reason=(
+                "A batch has no single result to chart — open a pair from Batch "
+                "Results and export its own report for visualizations."
+            ),
+        )
+        if sections is None:
+            return
+        html = build_batch_report_html(
+            batch_result, self._batch_report_config_rows(), self._performed_by(), sections
+        )
+        self._write_pdf_report(html, "Transfer_Learning_Batch_Report.pdf")
+
+    def _export_pair_report(self, pair: PairTransferLearningResult, chart_html: str) -> None:
+        """Export one batch pair's own report — used by ``PairDetailView``'s
+        Export Report button, which already has its own charts widget to
+        render *chart_html* from."""
+        if pair.result is None:
+            message_box.warning(
+                self, "Nothing to Export", "This pair failed and produced no result."
+            )
+            return
+        sections = self._pick_sections(visualizations_available=True)
+        if sections is None:
+            return
+        html = build_report_html(
+            pair.result,
+            self._pair_config_rows(pair),
+            self._palette,
+            chart_html,
+            self._performed_by(),
+            sections,
+        )
+        source_name = Path(pair.source_path).stem
+        target_name = Path(pair.target_path).stem
+        self._write_pdf_report(html, f"Transfer_Learning_Report_{source_name}_to_{target_name}.pdf")
+
+    def _export_history_report(
+        self,
+        entry: ExperimentHistoryEntry,
+        source_dataset: DatasetRecord | None,
+        target_dataset: DatasetRecord | None,
+    ) -> None:
+        """Export a report rebuilt from a persisted experiment row — no
+        per-sample predictions or charts, since neither is stored."""
+        sections = self._pick_sections(
+            visualizations_available=False,
+            unavailable_reason=(
+                "Past runs only keep their configuration, dataset stats, and "
+                "scores — per-sample predictions and charts aren't persisted."
+            ),
+        )
+        if sections is None:
+            return
+        html = build_history_report_html(entry, source_dataset, target_dataset, sections)
+        self._write_pdf_report(
+            html, f"Transfer_Learning_Report_Experiment_{entry.experiment.id}.pdf"
         )
 
 

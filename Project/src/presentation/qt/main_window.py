@@ -88,6 +88,9 @@ class MainWindow(
         self._last_request: TransferLearningRequest | None = None
         self._last_batch_request: BatchTransferLearningRequest | None = None
         self._last_batch_result: BatchTransferLearningResult | None = None
+        #: "single" | "batch" | None — which of _last_result/_last_batch_result
+        #: is the one to export when the sidebar's Export Report is clicked.
+        self._last_run_kind: str | None = None
         self._batch_results_tab_index = -1
         self._theme = "dark"
         self._palette = DARK_PALETTE

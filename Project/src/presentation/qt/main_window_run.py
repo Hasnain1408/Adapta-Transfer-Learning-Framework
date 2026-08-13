@@ -388,6 +388,7 @@ class MainWindowRunMixin:
 
     def _on_success(self, result: TransferLearningResult) -> None:
         self._last_result = result
+        self._last_run_kind = "single"
         self._set_status("Completed", "success")
         self._export_button.setEnabled(True)
         self._export_action.setEnabled(True)
@@ -419,6 +420,7 @@ class MainWindowRunMixin:
 
     def _on_batch_success(self, batch_result: BatchTransferLearningResult) -> None:
         self._last_batch_result = batch_result
+        self._last_run_kind = "batch"
         succeeded = sum(1 for pair in batch_result.pairs if pair.result is not None)
         failed = len(batch_result.pairs) - succeeded
         if batch_result.cancelled:
@@ -432,10 +434,12 @@ class MainWindowRunMixin:
             status_key = "warning"
         self._set_status(status, status_key)
 
-        # A single PDF report only makes sense for one pair — disable export
-        # rather than have it silently describe a stale single-pair result.
-        self._export_button.setEnabled(False)
-        self._export_action.setEnabled(False)
+        # _export_pdf_report dispatches on _last_run_kind, so this is safe to
+        # leave enabled — it now builds the batch report, not a stale
+        # single-pair one.
+        self._export_button.setEnabled(True)
+        self._export_action.setEnabled(True)
+        self._batch_export_button.setEnabled(True)
 
         # Metric cards show the batch-wide average, matching the summary
         # line on the Batch Results tab.

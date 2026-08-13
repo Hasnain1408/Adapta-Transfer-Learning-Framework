@@ -59,6 +59,7 @@ class HistoryTab(QWidget):
 
     configuration_requested = pyqtSignal(object)  # ExperimentRecord
     detail_requested = pyqtSignal(object)  # ExperimentHistoryEntry
+    export_requested = pyqtSignal(object)  # ExperimentHistoryEntry
 
     def __init__(
         self,
@@ -96,6 +97,14 @@ class HistoryTab(QWidget):
         self._load_button.setEnabled(False)
         self._load_button.clicked.connect(self._emit_configuration)
 
+        self._export_button = QPushButton("Export Report…")
+        self._export_button.setCursor(Qt.PointingHandCursor)
+        self._export_button.setToolTip(
+            "Export a PDF report rebuilt from this experiment's saved configuration and scores"
+        )
+        self._export_button.setEnabled(False)
+        self._export_button.clicked.connect(self._emit_export_request)
+
         self._delete_button = QPushButton("Delete")
         self._delete_button.setObjectName("dangerButton")
         self._delete_button.setCursor(Qt.PointingHandCursor)
@@ -107,6 +116,7 @@ class HistoryTab(QWidget):
         toolbar.addWidget(self._user_label)
         toolbar.addStretch(1)
         toolbar.addWidget(self._load_button)
+        toolbar.addWidget(self._export_button)
         toolbar.addWidget(self._delete_button)
         toolbar.addWidget(self._refresh_button)
 
@@ -243,6 +253,7 @@ class HistoryTab(QWidget):
     def _sync_buttons(self) -> None:
         has_selection = self._selected_entry() is not None
         self._load_button.setEnabled(has_selection)
+        self._export_button.setEnabled(has_selection)
         self._delete_button.setEnabled(has_selection)
 
     def _selected_entry(self) -> ExperimentHistoryEntry | None:
@@ -261,6 +272,11 @@ class HistoryTab(QWidget):
         entry = self._selected_entry()
         if entry is not None:
             self.detail_requested.emit(entry)
+
+    def _emit_export_request(self) -> None:
+        entry = self._selected_entry()
+        if entry is not None:
+            self.export_requested.emit(entry)
 
     def _delete_selected(self) -> None:
         entry = self._selected_entry()

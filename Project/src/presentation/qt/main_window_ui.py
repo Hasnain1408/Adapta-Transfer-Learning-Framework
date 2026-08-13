@@ -371,6 +371,16 @@ class MainWindowUIMixin:
         self._batch_summary_label.setObjectName("captionLabel")
         self._batch_summary_label.setWordWrap(True)
 
+        # Lives on the Batch Results tab itself (not just the sidebar) so it
+        # stays reachable when that tab is viewed in the full-screen results
+        # window, which never carries the sidebar with it.
+        self._batch_export_button = QPushButton("Export Report…")
+        self._batch_export_button.setCursor(Qt.PointingHandCursor)
+        self._batch_export_button.setEnabled(False)
+        self._batch_export_button.setToolTip(
+            "Export a PDF report for the whole batch — every pair plus the average"
+        )
+
         # Owner of any experiment recorded from now on — the account that
         # authenticated through AuthDialog before this window was built.
         self._user_label = QLabel()
@@ -767,7 +777,10 @@ class MainWindowUIMixin:
         batch_layout = QVBoxLayout(batch_page)
         batch_layout.setContentsMargins(12, 10, 12, 12)
         batch_layout.setSpacing(8)
-        batch_layout.addWidget(self._batch_summary_label)
+        batch_header = QHBoxLayout()
+        batch_header.addWidget(self._batch_summary_label, 1)
+        batch_header.addWidget(self._batch_export_button, 0, Qt.AlignTop)
+        batch_layout.addLayout(batch_header)
         batch_layout.addWidget(self._batch_results_table, 1)
 
         self._charts_widget = AnalyticsChartsWidget(self._palette)
@@ -844,6 +857,7 @@ class MainWindowUIMixin:
         self._pause_button.clicked.connect(self._toggle_pause)
         self._cancel_button.clicked.connect(self._cancel_run)
         self._export_button.clicked.connect(self._export_pdf_report)
+        self._batch_export_button.clicked.connect(self._export_batch_report)
 
         self._open_source_action.triggered.connect(self._pick_source)
         self._open_target_action.triggered.connect(self._pick_target)
@@ -872,6 +886,7 @@ class MainWindowUIMixin:
         self._database_info_action.triggered.connect(self._show_database_info)
         self._history_tab.configuration_requested.connect(self._apply_configuration)
         self._history_tab.detail_requested.connect(self._open_experiment_detail_tab)
+        self._history_tab.export_requested.connect(self._export_history_entry)
         self._batch_results_table.itemSelectionChanged.connect(self._open_pair_detail_tab)
 
 
