@@ -8,8 +8,35 @@ import scipy.io as sio
 
 from domain.models import Dataset
 
+#: Keys that unambiguously mark a domain as source/target within a .mat file,
+#: as opposed to the generic fallback keys ('fea', 'X', 'label', ...) that a
+#: single-domain file also matches under *either* role. Only these decide
+#: whether a file carries both halves — see ``has_combined_domains``.
+_SOURCE_ONLY_X_KEYS = ("X_src", "Xs")
+_TARGET_ONLY_X_KEYS = ("X_tar", "Xt", "tar_fea")
+
 
 class CSVDatasetLoader:
+    def has_combined_domains(self, path: str) -> bool:
+        """True when *path* alone carries both a source and a target half.
+
+        COIL20 and MNIST<->USPS ship this way: one .mat file with X_src/Y_src
+        *and* X_tar/Y_tar side by side, meant to be run without picking a
+        second file. Deliberately checks only the source/target-specific key
+        names, not the generic fallbacks ``load`` also accepts (`fea`, `X`,
+        `label`, ...) — a plain single-domain file matches those under
+        *either* ``is_source`` value, which would misreport it as combined.
+        """
+        if Path(path).suffix.lower() != ".mat":
+            return False
+        try:
+            mat_data = sio.loadmat(path)
+        except Exception:
+            return False
+        has_source = any(key in mat_data for key in _SOURCE_ONLY_X_KEYS)
+        has_target = any(key in mat_data for key in _TARGET_ONLY_X_KEYS)
+        return has_source and has_target
+
     def load(self, path: str, is_source: bool = True) -> Dataset:
         file_suffix = Path(path).suffix.lower()
 
@@ -19,12 +46,12 @@ class CSVDatasetLoader:
             dataframe = pd.read_excel(path, engine="openpyxl")
         elif file_suffix == ".mat":
             mat_data = sio.loadmat(path)
-            
+
             if is_source:
-                x_keys = ['X_src', 'Xs', 'fea', 'X', 'x']
+                x_keys = [*_SOURCE_ONLY_X_KEYS, 'fea', 'X', 'x']
                 y_keys = ['Y_src', 'Ys', 'gnd', 'Y', 'y', 'label', 'labels']
             else:
-                x_keys = ['X_tar', 'Xt', 'tar_fea', 'X', 'x']
+                x_keys = [*_TARGET_ONLY_X_KEYS, 'X', 'x']
                 y_keys = ['Y_tar', 'Yt', 'tar_gnd', 'Y', 'y', 'label', 'labels']
             
             features = None

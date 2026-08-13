@@ -25,6 +25,7 @@ TUNABLE_PARAMETERS = {
     "kernel_type": "_kernel_type",
     "regularization": "_regularization",
     "latent_dim": "_latent_dim",
+    "mu": "_mu",
 }
 
 
@@ -37,6 +38,16 @@ class RunTransferLearningUseCase:
     def method_names(self) -> list[str]:
         """Registered method names, in the order they were configured."""
         return list(self._methods)
+
+    def dataset_has_combined_domains(self, path: str) -> bool:
+        """Whether *path* alone carries both a source and a target half.
+
+        Delegates to the loader when it supports the check (only
+        ``CSVDatasetLoader`` does today); other ``DatasetLoader``
+        implementations simply report ``False``, meaning "use two files".
+        """
+        checker = getattr(self._loader, "has_combined_domains", None)
+        return bool(checker(path)) if checker is not None else False
 
     def supported_parameters(self, method_name: str) -> frozenset[str]:
         """Which tunable parameters the named method actually consumes.
@@ -221,6 +232,7 @@ class RunTransferLearningUseCase:
                 kernel_type=request.kernel_type,
                 regularization=request.regularization,
                 latent_dim=request.latent_dim,
+                mu=request.mu,
                 classifier=request.classifier,
             )
             try:
