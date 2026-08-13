@@ -11,6 +11,7 @@ from domain.models import (
     TransferLearningRequest,
     TransferLearningResult,
 )
+from domain.run_control import RunCancelled, RunControl
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
@@ -62,7 +63,12 @@ class RunTransferLearningUseCase:
             field for field, attribute in TUNABLE_PARAMETERS.items() if hasattr(method, attribute)
         )
 
-    def execute(self, request: TransferLearningRequest) -> TransferLearningResult:
+    def execute(
+        self, request: TransferLearningRequest, control: RunControl | None = None
+    ) -> TransferLearningResult:
+        if control is not None:
+            control.checkpoint()
+
         if request.method_name not in self._methods:
             supported = ", ".join(sorted(self._methods.keys()))
             raise ValueError(f"Unsupported method: {request.method_name}. Supported: {supported}")
@@ -136,6 +142,7 @@ class RunTransferLearningUseCase:
             source_features,
             target_features,
             source_labels=source_dataset.labels,
+            control=control,
         )
 
         output_feature_names = [
@@ -211,18 +218,35 @@ class RunTransferLearningUseCase:
             prediction_correctness=prediction_correctness,
         )
 
-    def execute_batch(self, request: BatchTransferLearningRequest) -> BatchTransferLearningResult:
+    def execute_batch(
+        self, request: BatchTransferLearningRequest, control: RunControl | None = None
+    ) -> BatchTransferLearningResult:
         """Run the same configuration over every ordered (source, target) pair.
 
         A single bad pair (unreadable file, incompatible shapes, ...) is
         recorded as an error on that pair rather than aborting the whole
         batch, so one broken file doesn't cost every other combination.
+
+        *control*, when given, is checked once per pair (and again inside
+        each pair's own ``execute``/``method.run``, for iterative methods).
+        A cancellation stops the batch after whichever pair was in flight;
+        pairs that already finished are kept and ``cancelled`` is set on the
+        returned result rather than raising, so the caller sees a partial
+        batch instead of losing it entirely.
         """
         if len(request.file_paths) < 2:
             raise ValueError("Batch mode requires at least two dataset files.")
 
         pairs: list[PairTransferLearningResult] = []
+        cancelled = False
         for source_path, target_path in permutations(request.file_paths, 2):
+            if control is not None:
+                try:
+                    control.checkpoint()
+                except RunCancelled:
+                    cancelled = True
+                    break
+
             pair_request = TransferLearningRequest(
                 method_name=request.method_name,
                 source_path=source_path,
@@ -236,10 +260,13 @@ class RunTransferLearningUseCase:
                 classifier=request.classifier,
             )
             try:
-                result = self.execute(pair_request)
+                result = self.execute(pair_request, control=control)
                 pairs.append(
                     PairTransferLearningResult(source_path=source_path, target_path=target_path, result=result)
                 )
+            except RunCancelled:
+                cancelled = True
+                break
             except Exception as exc:  # noqa: BLE001 - surfaced per-pair, not raised
                 pairs.append(
                     PairTransferLearningResult(source_path=source_path, target_path=target_path, error=str(exc))
@@ -259,7 +286,7 @@ class RunTransferLearningUseCase:
                 wrong_predictions=sum(m.wrong_predictions for m in metric_sets),
             )
 
-        return BatchTransferLearningResult(pairs=pairs, average_metrics=average_metrics)
+        return BatchTransferLearningResult(pairs=pairs, average_metrics=average_metrics, cancelled=cancelled)
 
     # ------------------------------------------------------------------
     # Classifier factory

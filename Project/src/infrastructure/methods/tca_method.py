@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 
 
 class TCAMethod(TransferLearningMethod):
@@ -63,7 +64,10 @@ class TCAMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         source_size = source_features.shape[0]
         target_size = target_features.shape[0]
         total_size = source_size + target_size

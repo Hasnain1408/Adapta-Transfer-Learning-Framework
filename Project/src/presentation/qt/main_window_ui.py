@@ -263,6 +263,24 @@ class MainWindowUIMixin:
         self._run_button.setCursor(Qt.PointingHandCursor)
         self._run_button.setDefault(True)
 
+        self._pause_button = QPushButton("Pause")
+        self._pause_button.setObjectName("pauseButton")
+        self._pause_button.setCursor(Qt.PointingHandCursor)
+        self._pause_button.setEnabled(False)
+        self._pause_button.setToolTip(
+            "Pauses before the next iteration (or, in batch mode, the next "
+            "pair) -- a fast one-shot method may finish before this takes effect."
+        )
+
+        self._cancel_button = QPushButton("Cancel")
+        self._cancel_button.setObjectName("dangerButton")
+        self._cancel_button.setCursor(Qt.PointingHandCursor)
+        self._cancel_button.setEnabled(False)
+        self._cancel_button.setToolTip(
+            "Stops after the current iteration or pair. A single-pair run has "
+            "no partial result to show; a batch keeps whatever pairs already finished."
+        )
+
         self._export_button = QPushButton("Export Report…")
         self._export_button.setObjectName("runButton")
         self._export_button.setCursor(Qt.PointingHandCursor)
@@ -656,6 +674,13 @@ class MainWindowUIMixin:
         row = QVBoxLayout()
         row.setSpacing(8)
         row.addWidget(self._run_button)
+
+        pause_cancel_row = QHBoxLayout()
+        pause_cancel_row.setSpacing(8)
+        pause_cancel_row.addWidget(self._pause_button)
+        pause_cancel_row.addWidget(self._cancel_button)
+        row.addLayout(pause_cancel_row)
+
         row.addWidget(self._export_button)
         return row
 
@@ -808,6 +833,8 @@ class MainWindowUIMixin:
         self._remove_batch_file_button.clicked.connect(self._remove_selected_batch_files)
         self._clear_batch_files_button.clicked.connect(self._clear_batch_files)
         self._run_button.clicked.connect(self._run_transfer_learning)
+        self._pause_button.clicked.connect(self._toggle_pause)
+        self._cancel_button.clicked.connect(self._cancel_run)
         self._export_button.clicked.connect(self._export_pdf_report)
 
         self._open_source_action.triggered.connect(self._pick_source)

@@ -90,3 +90,6 @@ class PairTransferLearningResult:
 class BatchTransferLearningResult:
     pairs: list[PairTransferLearningResult]
     average_metrics: Optional[EvaluationMetrics] = None
+    #: True when the batch was cancelled partway through -- ``pairs`` then
+    #: holds only the pairs that finished before the cancellation landed.
+    cancelled: bool = False

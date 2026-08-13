@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 
 
 class JGSAMethod(TransferLearningMethod):
@@ -95,7 +96,10 @@ class JGSAMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         if source_labels is None:
             raise ValueError("JGSA requires source_labels")
 
@@ -132,6 +136,8 @@ class JGSAMethod(TransferLearningMethod):
         transformed_target = target_norm[:, :dim] if target_norm.shape[1] >= dim else target_norm
 
         for it in range(self._iterations):
+            if control is not None:
+                control.checkpoint()
             N = self._conditional_distribution(source_labels, target_pseudo, ns, nt, classes)
             M = M0 + N
             m_norm = np.linalg.norm(M, ord="fro")

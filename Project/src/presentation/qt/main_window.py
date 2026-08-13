@@ -34,6 +34,7 @@ from domain.models import (
     TransferLearningRequest,
     TransferLearningResult,
 )
+from domain.run_control import RunControl
 from presentation.qt.experiment_detail_view import ExperimentDetailView
 from presentation.qt.main_window_report import MainWindowReportMixin
 from presentation.qt.main_window_results import MainWindowResultsMixin
@@ -81,6 +82,7 @@ class MainWindow(
         self._database_error = database_error
         self._current_user = current_user
         self._worker: TransferLearningWorker | BatchTransferLearningWorker | None = None
+        self._run_control: RunControl | None = None
         self._last_result: TransferLearningResult | None = None
         self._last_request: TransferLearningRequest | None = None
         self._last_batch_request: BatchTransferLearningRequest | None = None
@@ -121,6 +123,11 @@ class MainWindow(
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         worker = self._worker
         if worker is not None and worker.isRunning():
+            # A paused run is blocked indefinitely on its checkpoint, so it
+            # has to be cancelled before waiting on it, or this would hang
+            # until the timeout with the thread still alive afterwards.
+            if self._run_control is not None:
+                self._run_control.cancel()
             worker.wait(3000)
         super().closeEvent(event)
 

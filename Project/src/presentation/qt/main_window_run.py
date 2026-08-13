@@ -20,6 +20,7 @@ from domain.models import (
     TransferLearningRequest,
     TransferLearningResult,
 )
+from domain.run_control import RunControl
 from presentation.qt import message_box
 from presentation.qt.main_window_ui import DATASET_FILTER
 from presentation.qt.result_tables import populate_batch_results_table
@@ -231,9 +232,11 @@ class MainWindowRunMixin:
         self._set_running(True)
         self._set_status("Running experiment…", "warning")
 
-        self._worker = TransferLearningWorker(self._use_case, request)
+        self._run_control = RunControl()
+        self._worker = TransferLearningWorker(self._use_case, request, control=self._run_control)
         self._worker.succeeded.connect(self._on_success)
         self._worker.failed.connect(self._on_error)
+        self._worker.cancelled.connect(self._on_cancelled)
         self._worker.finished.connect(lambda: self._set_running(False))
         # Null out the Python reference *before* the C++ object is scheduled
         # for deletion, so the next call to _run_transfer_learning finds None
@@ -284,9 +287,11 @@ class MainWindowRunMixin:
         self._set_running(True)
         self._set_status(f"Running batch ({pair_count} pairs)…", "warning")
 
-        self._worker = BatchTransferLearningWorker(self._use_case, request)
+        self._run_control = RunControl()
+        self._worker = BatchTransferLearningWorker(self._use_case, request, control=self._run_control)
         self._worker.succeeded.connect(self._on_batch_success)
         self._worker.failed.connect(self._on_batch_error)
+        self._worker.cancelled.connect(self._on_cancelled)
         self._worker.finished.connect(lambda: self._set_running(False))
         self._worker.finished.connect(lambda: setattr(self, "_worker", None))
         self._worker.finished.connect(self._worker.deleteLater)
@@ -304,6 +309,44 @@ class MainWindowRunMixin:
         self._add_batch_files_button.setEnabled(not running)
         self._remove_batch_file_button.setEnabled(not running)
         self._clear_batch_files_button.setEnabled(not running)
+
+        self._pause_button.setEnabled(running)
+        self._pause_button.setText("Pause")
+        self._cancel_button.setEnabled(running)
+        if not running:
+            self._run_control = None
+
+    def _toggle_pause(self) -> None:
+        if self._run_control is None:
+            return
+        if self._run_control.is_paused:
+            self._run_control.resume()
+            self._pause_button.setText("Pause")
+            self._set_status(
+                "Running batch…" if self._batch_mode_check.isChecked() else "Running experiment…",
+                "warning",
+            )
+        else:
+            self._run_control.pause()
+            self._pause_button.setText("Resume")
+            self._set_status("Paused", "neutral")
+
+    def _cancel_run(self) -> None:
+        if self._run_control is None:
+            return
+        self._run_control.cancel()
+        # Disabled immediately so a second click can't fire while the worker
+        # thread is still unwinding to its next checkpoint.
+        self._cancel_button.setEnabled(False)
+        self._pause_button.setEnabled(False)
+        self._set_status("Cancelling…", "warning")
+
+    def _on_cancelled(self) -> None:
+        """A single-pair run was cancelled before it produced any result --
+        batch cancellation instead comes back through ``_on_batch_success``
+        with ``cancelled=True``, since a batch has partial results worth
+        keeping. Nothing to record here: there's no run to show."""
+        self._set_status("Cancelled", "neutral")
 
     def _on_success(self, result: TransferLearningResult) -> None:
         self._last_result = result
@@ -340,8 +383,16 @@ class MainWindowRunMixin:
         self._last_batch_result = batch_result
         succeeded = sum(1 for pair in batch_result.pairs if pair.result is not None)
         failed = len(batch_result.pairs) - succeeded
-        status = "Batch completed" if failed == 0 else f"Batch completed ({failed} pair(s) failed)"
-        self._set_status(status, "success" if failed == 0 else "warning")
+        if batch_result.cancelled:
+            status = f"Batch cancelled ({len(batch_result.pairs)} pair(s) completed)"
+            status_key = "neutral"
+        elif failed == 0:
+            status = "Batch completed"
+            status_key = "success"
+        else:
+            status = f"Batch completed ({failed} pair(s) failed)"
+            status_key = "warning"
+        self._set_status(status, status_key)
 
         # A single PDF report only makes sense for one pair — disable export
         # rather than have it silently describe a stale single-pair result.
@@ -365,6 +416,8 @@ class MainWindowRunMixin:
         summary_text = populate_batch_results_table(
             self._batch_results_table, batch_result, self._palette
         )
+        if batch_result.cancelled:
+            summary_text = "Cancelled before the remaining pairs ran. " + summary_text
         self._batch_summary_label.setText(summary_text)
         self._results_fullscreen_button.setEnabled(True)
         self._results_stack.setCurrentIndex(1)

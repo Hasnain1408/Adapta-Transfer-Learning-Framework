@@ -7,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 from infrastructure.methods.gfk_method import GFKMethod
 
 
@@ -150,7 +151,10 @@ class MEDAMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         if source_labels is None:
             raise ValueError("MEDA requires source_labels")
 
@@ -197,6 +201,8 @@ class MEDAMethod(TransferLearningMethod):
 
         F = None
         for _ in range(self._iterations):
+            if control is not None:
+                control.checkpoint()
             mu = self._estimate_mu(xs_new, source_labels, xt_new, target_pseudo)
 
             e_marginal = np.vstack([np.full((ns, 1), 1.0 / ns), np.full((nt, 1), -1.0 / nt)])

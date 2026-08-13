@@ -4,6 +4,7 @@ import numpy as np
 from scipy.linalg import subspace_angles
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 
 
 class OCMTLMethod(TransferLearningMethod):
@@ -20,7 +21,10 @@ class OCMTLMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         if source_labels is None:
             raise ValueError("OCMTL requires source_labels to compute class balancing.")
 
@@ -54,6 +58,8 @@ class OCMTLMethod(TransferLearningMethod):
         temp_angle = np.inf
         
         for it in range(self._max_iterations):
+            if control is not None:
+                control.checkpoint()
             # Ass = temp_s * Ct (m x k)
             Ass = source @ Ct
             U_As, _, _ = np.linalg.svd(Ass, full_matrices=False)
