@@ -313,8 +313,42 @@ class MainWindowRunMixin:
         self._pause_button.setEnabled(running)
         self._pause_button.setText("Pause")
         self._cancel_button.setEnabled(running)
-        if not running:
+        self._set_progress_bar_paused(False)
+
+        if running:
+            # Restart the cycle fresh on every run rather than continuing
+            # from wherever a previous run left off.
+            self._progress_color_index = 0
+            self._progress_bar.setProperty("cycleColor", "0")
+            self._progress_bar.style().unpolish(self._progress_bar)
+            self._progress_bar.style().polish(self._progress_bar)
+            self._progress_color_timer.start()
+        else:
+            self._progress_color_timer.stop()
             self._run_control = None
+
+    def _set_progress_bar_paused(self, paused: bool) -> None:
+        """Freeze the bar (static, no motion) and switch its colour while
+        paused; restore the animated indeterminate sweep otherwise. A
+        QProgressBar's built-in "busy" animation runs off its own Qt timer,
+        independent of whether the underlying work is actually paused, so
+        this has to be done explicitly rather than falling out of RunControl."""
+        self._progress_bar.setRange(0, 1 if paused else 0)
+        if paused:
+            self._progress_bar.setValue(1)
+        self._progress_bar.setProperty("paused", paused)
+        self._progress_bar.style().unpolish(self._progress_bar)
+        self._progress_bar.style().polish(self._progress_bar)
+
+    def _advance_progress_bar_color(self) -> None:
+        """Ticks once a second (see the QTimer wired up in
+        MainWindowUIMixin._build_status_bar) while a run is active and not
+        paused, stepping the chunk through cycleColor 0-3 so it visibly
+        changes colour over time rather than sitting on one shade."""
+        self._progress_color_index = (self._progress_color_index + 1) % 4
+        self._progress_bar.setProperty("cycleColor", str(self._progress_color_index))
+        self._progress_bar.style().unpolish(self._progress_bar)
+        self._progress_bar.style().polish(self._progress_bar)
 
     def _toggle_pause(self) -> None:
         if self._run_control is None:
@@ -322,6 +356,8 @@ class MainWindowRunMixin:
         if self._run_control.is_paused:
             self._run_control.resume()
             self._pause_button.setText("Pause")
+            self._set_progress_bar_paused(False)
+            self._progress_color_timer.start()
             self._set_status(
                 "Running batch…" if self._batch_mode_check.isChecked() else "Running experiment…",
                 "warning",
@@ -329,6 +365,8 @@ class MainWindowRunMixin:
         else:
             self._run_control.pause()
             self._pause_button.setText("Resume")
+            self._set_progress_bar_paused(True)
+            self._progress_color_timer.stop()
             self._set_status("Paused", "neutral")
 
     def _cancel_run(self) -> None:

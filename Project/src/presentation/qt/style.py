@@ -658,6 +658,41 @@ QProgressBar::chunk {
     border-radius: 3px;
 }
 
+/* Run progress bar: wider and slightly taller than the generic bar above so
+   it reads clearly in the status bar. While running, its chunk colour steps
+   through cycleColor 0-3 once a second (see _advance_progress_bar_color,
+   which sets that property on a 1s QTimer); while paused, the timer is
+   stopped and the [paused="true"] rule below takes over instead -- it's
+   declared last so it wins the cascade regardless of whatever cycleColor
+   was left on when the timer stopped, keeping "paused" visually distinct
+   from "still cycling". */
+QProgressBar#runProgressBar {
+    background-color: $surface_sunken;
+    border: none;
+    border-radius: 4px;
+    max-height: 9px;
+    text-align: center;
+}
+QProgressBar#runProgressBar::chunk {
+    background-color: $accent;
+    border-radius: 4px;
+}
+QProgressBar#runProgressBar[cycleColor="0"]::chunk {
+    background-color: #20D046;
+}
+QProgressBar#runProgressBar[cycleColor="1"]::chunk {
+    background-color: #FFDF20;
+}
+QProgressBar#runProgressBar[cycleColor="2"]::chunk {
+    background-color: #3C48D3;
+}
+QProgressBar#runProgressBar[cycleColor="3"]::chunk {
+    background-color: #000080;
+}
+QProgressBar#runProgressBar[paused="true"]::chunk {
+    background-color: #FF0000;
+}
+
 /* ---------- Separators ---------- */
 QFrame#divider {
     background-color: $border;

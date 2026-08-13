@@ -83,6 +83,7 @@ class MainWindow(
         self._current_user = current_user
         self._worker: TransferLearningWorker | BatchTransferLearningWorker | None = None
         self._run_control: RunControl | None = None
+        self._progress_color_index = 0
         self._last_result: TransferLearningResult | None = None
         self._last_request: TransferLearningRequest | None = None
         self._last_batch_request: BatchTransferLearningRequest | None = None

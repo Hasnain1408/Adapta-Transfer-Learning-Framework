@@ -8,7 +8,7 @@ because "build every widget" is one coherent job on its own.
 
 from __future__ import annotations
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -796,10 +796,18 @@ class MainWindowUIMixin:
         self._status_label = QLabel()
 
         self._progress_bar = QProgressBar()
-        self._progress_bar.setRange(0, 0)  # indeterminate
+        self._progress_bar.setObjectName("runProgressBar")
+        self._progress_bar.setRange(0, 0)  # indeterminate (animated) while running
         self._progress_bar.setTextVisible(False)
-        self._progress_bar.setFixedWidth(150)
+        self._progress_bar.setFixedWidth(260)
         self._progress_bar.hide()
+
+        # Steps the chunk through cycleColor 0-3 once a second while running;
+        # started/stopped alongside the run itself, see _set_running and
+        # _toggle_pause in MainWindowRunMixin.
+        self._progress_color_timer = QTimer(self)
+        self._progress_color_timer.setInterval(1000)
+        self._progress_color_timer.timeout.connect(self._advance_progress_bar_color)
 
         self._context_label = QLabel()
 
