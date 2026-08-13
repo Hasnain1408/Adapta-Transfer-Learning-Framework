@@ -21,6 +21,7 @@ from infrastructure.methods.dali_method import DALIMethod
 from infrastructure.methods.gfk_method import GFKMethod
 from infrastructure.methods.jgsa_method import JGSAMethod
 from infrastructure.methods.jcsl_method import JCSLMethod
+from infrastructure.methods.meda_method import MEDAMethod
 from infrastructure.persistence import (
     Database,
     DatabaseConfigError,
@@ -87,6 +88,7 @@ def build_window(
         GFKMethod(latent_dim=10),
         JGSAMethod(latent_dim=10, regularization=1.0, beta=1.0, mu=1.0, iterations=10),
         JCSLMethod(latent_dim=10, regularization=0.01, subspace_weight=0.5, iterations=200),
+        MEDAMethod(latent_dim=20, regularization=1.0, kernel_type="rbf", rho=1.0, eta=0.1, iterations=10),
     ]
     use_case = RunTransferLearningUseCase(loader=loader, methods=methods)
     return MainWindow(
