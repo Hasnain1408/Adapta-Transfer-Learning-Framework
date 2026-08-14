@@ -198,7 +198,40 @@ class EvaluationRecord:
     total_samples: int = 0
     correct_predictions: int = 0
     wrong_predictions: int = 0
+    #: Everything below is nullable and stays that way: rows written before
+    #: the results-comparison module existed have no such measurement, and
+    #: the charts must show a gap rather than invent a zero for them.
+    auc: float | None = None
+    mmd_before: float | None = None
+    mmd_after: float | None = None
+    alignment_status: str | None = None
+    execution_seconds: float | None = None
+    adaptation_seconds: float | None = None
+    baseline_accuracy: float | None = None
+    baseline_f1: float | None = None
     id: int | None = None
+
+    @property
+    def mmd_change_percent(self) -> float | None:
+        """``((before - after) / before) * 100``; None if either is missing."""
+        if self.mmd_before is None or self.mmd_after is None:
+            return None
+        if abs(self.mmd_before) < 1e-12:
+            return 0.0
+        return (self.mmd_before - self.mmd_after) / self.mmd_before * 100.0
+
+    @property
+    def accuracy_delta(self) -> float | None:
+        """Adapted minus baseline accuracy; None without a stored baseline."""
+        if self.baseline_accuracy is None:
+            return None
+        return self.accuracy - self.baseline_accuracy
+
+    @property
+    def f1_delta(self) -> float | None:
+        if self.baseline_f1 is None:
+            return None
+        return self.f1_score - self.baseline_f1
 
 
 @dataclass(frozen=True)

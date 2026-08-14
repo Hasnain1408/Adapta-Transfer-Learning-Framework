@@ -32,6 +32,7 @@ class MainWindowThemeMixin:
 
         self._charts_widget.set_palette(self._palette)
         self._visualization_tab.set_palette(self._palette)
+        self._comparison_tab.set_palette(self._palette)
         self._history_tab.set_palette(self._palette)
         if self._last_result is not None:
             self._show_predictions(self._last_result)

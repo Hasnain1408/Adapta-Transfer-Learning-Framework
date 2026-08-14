@@ -371,6 +371,58 @@ def build_batch_report_html(
     return "".join(parts)
 
 
+def build_comparison_report_html(
+    context: dict[str, str],
+    chart_sections: list[tuple[str, str]],
+    table_rows: list[list[str]],
+    performed_by: str,
+    include_table: bool = True,
+) -> str:
+    """Render the stored-results comparison as a standalone report.
+
+    *chart_sections* is ``[(view name, <img> markup), ...]`` — one entry per
+    comparison view the user ticked, already rendered by the tab that owns
+    the figure. *table_rows* is the exact-values table with its header row
+    first. Nothing is computed here; this only lays out what it is given.
+    """
+    parts = _page_header("Experimental Results Comparison", performed_by, datetime.now())
+
+    parts.append("<h2>Comparison Scope</h2><table width='100%'>")
+    for label, value in context.items():
+        parts.append(
+            f"<tr><th style='width:35%'>{escape(label)}</th><td>{escape(str(value))}</td></tr>"
+        )
+    parts.append("</table>")
+
+    for title, chart_html in chart_sections:
+        if not chart_html:
+            continue
+        parts.append(f"<h2>{escape(title)}</h2>")
+        parts.append(chart_html)
+
+    if include_table and len(table_rows) > 1:
+        parts.append("<h2>Exact Values</h2><table width='100%'>")
+        header, *body = table_rows
+        parts.append(
+            "<tr>" + "".join(f"<th>{escape(str(cell))}</th>" for cell in header) + "</tr>"
+        )
+        for row in body:
+            cells = "".join(
+                f"<td class='num'>{escape(str(cell))}</td>" if index else
+                f"<td>{escape(str(cell))}</td>"
+                for index, cell in enumerate(row)
+            )
+            parts.append(f"<tr>{cells}</tr>")
+        parts.append("</table>")
+        parts.append(
+            "<p class='meta'>An em-dash means the value was never recorded for "
+            "that run, not that it was zero.</p>"
+        )
+
+    parts.append("</body></html>")
+    return "".join(parts)
+
+
 def build_history_report_html(
     entry: ExperimentHistoryEntry,
     source_dataset: DatasetRecord | None,

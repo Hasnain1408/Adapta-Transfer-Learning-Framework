@@ -432,6 +432,8 @@ class MainWindowRunMixin:
         self._results_stack.setCurrentIndex(1)
         self._update_context_label()
         self._record_run(result, error_message=None)
+        # The run just added a row the comparison charts should include.
+        self._comparison_tab.refresh()
 
     def _on_error(self, message: str) -> None:
         self._set_status("Failed", "danger")
@@ -497,6 +499,7 @@ class MainWindowRunMixin:
         if self._batch_results_tab_index >= 0:
             self._results_tabs.setCurrentIndex(self._batch_results_tab_index)
         self._record_batch_run(batch_result)
+        self._comparison_tab.refresh()
 
     # ------------------------------------------------------------------
     # Clear

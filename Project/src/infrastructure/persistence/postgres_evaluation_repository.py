@@ -25,9 +25,13 @@ class PostgresEvaluationRepository:
             """
             INSERT INTO evaluations (
                 experiment_id, accuracy, "precision", recall, f1_score,
-                total_samples, correct_predictions, wrong_predictions
+                total_samples, correct_predictions, wrong_predictions,
+                auc, mmd_before, mmd_after, alignment_status,
+                execution_seconds, adaptation_seconds,
+                baseline_accuracy, baseline_f1
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (experiment_id) DO UPDATE SET
                 accuracy            = EXCLUDED.accuracy,
                 "precision"         = EXCLUDED."precision",
@@ -35,7 +39,15 @@ class PostgresEvaluationRepository:
                 f1_score            = EXCLUDED.f1_score,
                 total_samples       = EXCLUDED.total_samples,
                 correct_predictions = EXCLUDED.correct_predictions,
-                wrong_predictions   = EXCLUDED.wrong_predictions
+                wrong_predictions   = EXCLUDED.wrong_predictions,
+                auc                 = EXCLUDED.auc,
+                mmd_before          = EXCLUDED.mmd_before,
+                mmd_after           = EXCLUDED.mmd_after,
+                alignment_status    = EXCLUDED.alignment_status,
+                execution_seconds   = EXCLUDED.execution_seconds,
+                adaptation_seconds  = EXCLUDED.adaptation_seconds,
+                baseline_accuracy   = EXCLUDED.baseline_accuracy,
+                baseline_f1         = EXCLUDED.baseline_f1
             RETURNING *
             """,
             (
@@ -47,6 +59,14 @@ class PostgresEvaluationRepository:
                 evaluation.total_samples,
                 evaluation.correct_predictions,
                 evaluation.wrong_predictions,
+                evaluation.auc,
+                evaluation.mmd_before,
+                evaluation.mmd_after,
+                evaluation.alignment_status,
+                evaluation.execution_seconds,
+                evaluation.adaptation_seconds,
+                evaluation.baseline_accuracy,
+                evaluation.baseline_f1,
             ),
         )
         assert row is not None

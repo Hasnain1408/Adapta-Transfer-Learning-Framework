@@ -28,6 +28,12 @@ class EvaluationMetrics:
     total_samples: int
     correct_predictions: int
     wrong_predictions: int
+    #: Area under the ROC curve, or ``None`` when it cannot be computed —
+    #: a classifier exposing neither ``predict_proba`` nor
+    #: ``decision_function``, a single-class target, or scores whose classes
+    #: don't line up with the target's. Optional rather than 0.0 because
+    #: "not measurable" and "no better than chance" are different claims.
+    auc: Optional[float] = None
 
 
 @dataclass(frozen=True)

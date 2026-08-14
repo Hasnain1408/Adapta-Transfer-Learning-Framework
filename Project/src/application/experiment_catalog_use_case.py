@@ -176,6 +176,8 @@ class ExperimentCatalogUseCase:
 
         metrics = result.metrics
         if metrics is not None and experiment.id is not None:
+            alignment = result.alignment
+            analysis = result.negative_transfer
             self._evaluations.add(
                 EvaluationRecord(
                     experiment_id=experiment.id,
@@ -186,6 +188,16 @@ class ExperimentCatalogUseCase:
                     total_samples=int(metrics.total_samples),
                     correct_predictions=int(metrics.correct_predictions),
                     wrong_predictions=int(metrics.wrong_predictions),
+                    auc=metrics.auc,
+                    # Stored so the comparison charts can be rebuilt from the
+                    # database alone, long after the in-memory result is gone.
+                    mmd_before=alignment.mmd_before if alignment else None,
+                    mmd_after=alignment.mmd_after if alignment else None,
+                    alignment_status=alignment.status if alignment else None,
+                    execution_seconds=result.duration_seconds,
+                    adaptation_seconds=result.adaptation_seconds,
+                    baseline_accuracy=analysis.baseline.accuracy if analysis else None,
+                    baseline_f1=analysis.baseline.f1_score if analysis else None,
                 )
             )
         return experiment
@@ -267,6 +279,57 @@ class ExperimentCatalogUseCase:
         return self._evaluations.get_for_experiment(experiment_id)
 
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Queries for the results-comparison module
+    # ------------------------------------------------------------------
+    def domain_pairs(self, user_id: int | None = None) -> list[tuple[str, str]]:
+        """Distinct (source, target) domains that have at least one score.
+
+        Pairs with no evaluation row are left out: there is nothing to plot
+        for a run that failed or had no labels.
+        """
+        return sorted(
+            {
+                (entry.experiment.source_domain, entry.experiment.target_domain)
+                for entry in self.history(user_id)
+                if entry.evaluation is not None
+            }
+        )
+
+    def results_for_pair(
+        self,
+        source_domain: str,
+        target_domain: str,
+        user_id: int | None = None,
+        latest_per_method: bool = True,
+    ) -> list[ExperimentHistoryEntry]:
+        """Stored, scored runs for one source→target pair.
+
+        With *latest_per_method* (the default) only the most recent run of
+        each algorithm is returned — re-running a method to tweak it would
+        otherwise put the same algorithm on a comparison chart several times
+        with no way to tell the bars apart.
+        """
+        matching = [
+            entry
+            for entry in self.history(user_id)
+            if entry.evaluation is not None
+            and entry.experiment.source_domain == source_domain
+            and entry.experiment.target_domain == target_domain
+        ]
+        matching.sort(key=lambda entry: (entry.experiment.date is not None, entry.experiment.date), reverse=True)
+        if not latest_per_method:
+            return matching
+
+        seen: set[str] = set()
+        latest: list[ExperimentHistoryEntry] = []
+        for entry in matching:
+            algorithm = entry.experiment.tl_algorithm
+            if algorithm not in seen:
+                seen.add(algorithm)
+                latest.append(entry)
+        return latest
+
     def statistics(self) -> dict[str, int]:
         """Row counts per table, for the status bar and the About box."""
         return {

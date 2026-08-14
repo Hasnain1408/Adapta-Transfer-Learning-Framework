@@ -38,6 +38,7 @@ from PyQt5.QtWidgets import (
 
 from domain.entities import UserRole
 from presentation.qt.charts_widget import AnalyticsChartsWidget
+from presentation.qt.comparison_tab import ComparisonTab
 from presentation.qt.visualization_tab import VisualizationTab
 from presentation.qt.dataset_summary_view import DatasetSummaryView
 from presentation.qt.history_tab import HistoryTab
@@ -744,6 +745,10 @@ class MainWindowUIMixin:
         # individually right after being added, so only those stay closable.
         self._results_tabs.setTabsClosable(True)
         self._results_tabs.tabCloseRequested.connect(self._close_results_tab)
+        # Comparison and History are populated from the database, not from a
+        # run, so Full Screen has to follow the active tab rather than
+        # staying disabled until an experiment finishes.
+        self._results_tabs.currentChanged.connect(self._sync_fullscreen_button)
 
         predictions_page = QWidget()
         predictions_layout = QVBoxLayout(predictions_page)
@@ -775,6 +780,7 @@ class MainWindowUIMixin:
 
         self._charts_widget = AnalyticsChartsWidget(self._palette)
         self._visualization_tab = VisualizationTab(self._palette)
+        self._comparison_tab = ComparisonTab(self._catalog, self._palette)
         self._history_tab = HistoryTab(self._catalog, self._palette)
 
         self._results_tabs.addTab(predictions_page, "Predictions")
@@ -783,11 +789,12 @@ class MainWindowUIMixin:
         self._results_tabs.addTab(features_page, "Transformed Features")
         self._results_tabs.addTab(self._summary_view, "Dataset Summary")
         self._results_tabs.addTab(batch_page, "Batch Results")
+        self._results_tabs.addTab(self._comparison_tab, "Comparison")
         self._results_tabs.addTab(self._history_tab, "History")
         self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
         self._history_tab_index = self._results_tabs.indexOf(self._history_tab)
 
-        # These seven are permanent — only dynamically opened experiment-detail
+        # These eight are permanent — only dynamically opened experiment-detail
         # tabs (see _open_experiment_detail_tab) are meant to be closable.
         for index in range(self._results_tabs.count()):
             self._results_tabs.tabBar().setTabButton(index, QTabBar.RightSide, None)

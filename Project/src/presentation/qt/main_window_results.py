@@ -95,6 +95,23 @@ class MainWindowResultsMixin:
             ) or (correct_only and correctness == "Wrong")
             self._predictions_table.setRowHidden(row, hide)
 
+    def _sync_fullscreen_button(self, *_args) -> None:
+        """Enable Full Screen for whatever the active tab can actually show.
+
+        The database-backed tabs have content the moment the app starts, so
+        gating the button purely on "a run has finished" would lock the most
+        chart-heavy view out of the only comfortable way to read it.
+        """
+        widget = self._results_tabs.currentWidget()
+        database_backed = widget in (
+            getattr(self, "_comparison_tab", None),
+            getattr(self, "_history_tab", None),
+        )
+        self._results_fullscreen_button.setEnabled(
+            database_backed or self._last_result is not None
+            or self._last_batch_result is not None
+        )
+
     def _open_results_fullscreen(self) -> None:
         """Move the whole results tab widget into a maximized window.
 

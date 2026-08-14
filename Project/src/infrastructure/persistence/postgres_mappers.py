@@ -100,6 +100,16 @@ def _to_evaluation(row: dict[str, Any]) -> EvaluationRecord:
         total_samples=row.get("total_samples") or 0,
         correct_predictions=row.get("correct_predictions") or 0,
         wrong_predictions=row.get("wrong_predictions") or 0,
+        # .get(), not "or": these are legitimately NULL on older rows, and
+        # "or" would turn a real stored 0.0 into None.
+        auc=row.get("auc"),
+        mmd_before=row.get("mmd_before"),
+        mmd_after=row.get("mmd_after"),
+        alignment_status=row.get("alignment_status"),
+        execution_seconds=row.get("execution_seconds"),
+        adaptation_seconds=row.get("adaptation_seconds"),
+        baseline_accuracy=row.get("baseline_accuracy"),
+        baseline_f1=row.get("baseline_f1"),
     )
 
 

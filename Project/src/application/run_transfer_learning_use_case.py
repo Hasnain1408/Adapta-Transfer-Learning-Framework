@@ -23,7 +23,13 @@ from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 import numpy as np
 
 
@@ -308,9 +314,45 @@ class RunTransferLearningUseCase:
                 total_samples=total_samples,
                 correct_predictions=correct_predictions,
                 wrong_predictions=total_samples - correct_predictions,
+                auc=self._roc_auc(clf, test_x, test_y),
             ),
             predictions,
         )
+
+    @staticmethod
+    def _roc_auc(clf, test_x, test_y) -> float | None:
+        """ROC AUC from whichever scoring interface the classifier offers.
+
+        Returns ``None`` rather than raising or substituting a number: AUC is
+        genuinely undefined for a single-class target, and several of the
+        selectable classifiers (SVC without ``probability=True``) expose only
+        a decision function, whose shape differs between the binary and
+        multi-class cases.
+        """
+        try:
+            classes = np.unique(test_y)
+            if classes.size < 2:
+                return None
+            if hasattr(clf, "predict_proba"):
+                scores = clf.predict_proba(test_x)
+            elif hasattr(clf, "decision_function"):
+                scores = clf.decision_function(test_x)
+            else:
+                return None
+
+            scores = np.asarray(scores)
+            if classes.size == 2:
+                # Binary AUC wants the positive class's score alone.
+                if scores.ndim == 2:
+                    scores = scores[:, -1]
+                return float(roc_auc_score(test_y, scores))
+            if scores.ndim != 2:
+                return None
+            return float(
+                roc_auc_score(test_y, scores, multi_class="ovr", average="macro")
+            )
+        except Exception:  # noqa: BLE001 - an unscoreable run reports no AUC
+            return None
 
     def execute_batch(
         self, request: BatchTransferLearningRequest, control: RunControl | None = None

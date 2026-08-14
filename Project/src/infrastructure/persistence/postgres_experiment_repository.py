@@ -129,7 +129,15 @@ class PostgresExperimentRepository:
                    v.f1_score            AS v_f1_score,
                    v.total_samples       AS v_total_samples,
                    v.correct_predictions AS v_correct_predictions,
-                   v.wrong_predictions   AS v_wrong_predictions
+                   v.wrong_predictions   AS v_wrong_predictions,
+                   v.auc                 AS v_auc,
+                   v.mmd_before          AS v_mmd_before,
+                   v.mmd_after           AS v_mmd_after,
+                   v.alignment_status    AS v_alignment_status,
+                   v.execution_seconds   AS v_execution_seconds,
+                   v.adaptation_seconds  AS v_adaptation_seconds,
+                   v.baseline_accuracy   AS v_baseline_accuracy,
+                   v.baseline_f1         AS v_baseline_f1
               FROM experiments e
               LEFT JOIN users       u ON u.id = e.user_id
               LEFT JOIN evaluations v ON v.experiment_id = e.id
@@ -167,6 +175,14 @@ class PostgresExperimentRepository:
                         "total_samples": row["v_total_samples"],
                         "correct_predictions": row["v_correct_predictions"],
                         "wrong_predictions": row["v_wrong_predictions"],
+                        "auc": row["v_auc"],
+                        "mmd_before": row["v_mmd_before"],
+                        "mmd_after": row["v_mmd_after"],
+                        "alignment_status": row["v_alignment_status"],
+                        "execution_seconds": row["v_execution_seconds"],
+                        "adaptation_seconds": row["v_adaptation_seconds"],
+                        "baseline_accuracy": row["v_baseline_accuracy"],
+                        "baseline_f1": row["v_baseline_f1"],
                     }
                 )
                 if row.get("v_id") is not None

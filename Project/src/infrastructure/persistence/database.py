@@ -159,6 +159,17 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         wrong_predictions   INTEGER          NOT NULL DEFAULT 0 CHECK (wrong_predictions   >= 0)
     )
     """,
+    # Added after the fact for the results-comparison module. All nullable:
+    # rows recorded before these existed genuinely have no such measurement,
+    # and NULL says that where a 0.0 would read as a real reading.
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS auc                DOUBLE PRECISION",
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS mmd_before         DOUBLE PRECISION",
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS mmd_after          DOUBLE PRECISION",
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS alignment_status   TEXT",
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS execution_seconds  DOUBLE PRECISION",
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS adaptation_seconds DOUBLE PRECISION",
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS baseline_accuracy  DOUBLE PRECISION",
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS baseline_f1        DOUBLE PRECISION",
     # ------------------------------------------------------------- indexes
     "CREATE INDEX IF NOT EXISTS idx_experiments_user   ON experiments(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_experiments_date   ON experiments(date DESC)",

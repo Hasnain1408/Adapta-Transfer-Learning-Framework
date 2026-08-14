@@ -61,6 +61,7 @@ class MainWindowSessionMixin:
             self._browse_history_button.setVisible(self._catalog is not None and signed_in)
 
         self._history_tab.set_current_user(self._current_user)
+        self._comparison_tab.set_current_user(self._current_user)
         self._set_history_visible(signed_in)
 
     def _set_history_visible(self, visible: bool) -> None:
@@ -166,6 +167,7 @@ class MainWindowSessionMixin:
         """Persist the single run that just finished and refresh History."""
         self._persist_run(self._last_request, result, error_message)
         self._history_tab.refresh()
+        self._comparison_tab.refresh()
 
     def _record_batch_run(self, batch_result: BatchTransferLearningResult) -> None:
         """Persist every pair of a batch run as its own experiment/dataset pair."""
@@ -188,12 +190,14 @@ class MainWindowSessionMixin:
             self._persist_run(pair_request, pair.result, pair.error)
 
         self._history_tab.refresh()
+        self._comparison_tab.refresh()
 
     def _show_history(self) -> None:
         """Bring the History tab to the front and reload user-specific history."""
         if self._catalog is None or self._current_user is None:
             return
         self._history_tab.set_current_user(self._current_user)
+        self._comparison_tab.set_current_user(self._current_user)
         self._set_history_visible(True)
         self._results_stack.setCurrentIndex(1)
         index = self._results_tabs.indexOf(self._history_tab)
@@ -212,6 +216,7 @@ class MainWindowSessionMixin:
                 self._current_user = refreshed
                 self._update_user_label()
         self._history_tab.refresh()
+        self._comparison_tab.refresh()
 
     def _open_dataset_registry(self) -> None:
         if self._catalog is None:
