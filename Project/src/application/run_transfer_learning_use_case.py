@@ -3,10 +3,14 @@ from __future__ import annotations
 from itertools import permutations
 
 from domain.interfaces import DatasetLoader, TransferLearningMethod
+from domain.mmd import classify_alignment, compute_mmd, percentage_change
 from domain.models import (
+    NEGATIVE_TRANSFER_TOLERANCE,
     BatchTransferLearningRequest,
     BatchTransferLearningResult,
+    DomainAlignment,
     EvaluationMetrics,
+    NegativeTransferAnalysis,
     PairTransferLearningResult,
     TransferLearningRequest,
     TransferLearningResult,
@@ -154,57 +158,55 @@ class RunTransferLearningUseCase:
         target_predictions = None
         target_actuals = None
         prediction_correctness = None
+        negative_transfer = None
 
         if source_dataset.labels is not None and target_dataset.labels is not None:
-            clf = self._build_classifier(request.classifier)
-            clf.fit(transformed_source, source_dataset.labels)
-            predictions = clf.predict(transformed_target)
-
-            target_predictions = predictions
+            metrics, target_predictions = self._evaluate(
+                request.classifier,
+                transformed_source,
+                source_dataset.labels,
+                transformed_target,
+                target_dataset.labels,
+            )
             target_actuals = target_dataset.labels
-
-            total_samples = len(target_actuals)
-            correct_predictions = int(np.sum(target_predictions == target_actuals))
-            wrong_predictions = total_samples - correct_predictions
-
             prediction_correctness = [
                 "Right" if p == a else "Wrong"
                 for p, a in zip(target_predictions, target_actuals)
             ]
 
-            # print(f"Total samples size: {total_samples}")
-            # print(f"Number of correct predictions: {correct_predictions}")
-            # print(f"Number of wrong predictions: {wrong_predictions}\n")
-
-            # print("Target Label Predictions:")
-            # for i, pred in enumerate(target_predictions):
-            #     sample_name = f"Sample {i+1}"
-            #     print(f"{sample_name} -> {pred}")
-
-            # print("\nActual Target Labels:")
-            # for i, actual in enumerate(target_actuals):
-            #     sample_name = f"Sample {i+1}"
-            #     print(f"{sample_name} -> {actual}")
-
-            accuracy = float(accuracy_score(target_dataset.labels, predictions))
+            # The same classifier over the *un-adapted* features: the score
+            # you would have got by skipping domain adaptation entirely.
+            # Without this there is nothing to call negative transfer against.
+            if control is not None:
+                control.checkpoint()
             try:
-                precision = float(precision_score(target_dataset.labels, predictions, average="binary", zero_division=0))
-                recall = float(recall_score(target_dataset.labels, predictions, average="binary", zero_division=0))
-                f1 = float(f1_score(target_dataset.labels, predictions, average="binary", zero_division=0))
-            except ValueError:
-                precision = float(precision_score(target_dataset.labels, predictions, average="macro", zero_division=0))
-                recall = float(recall_score(target_dataset.labels, predictions, average="macro", zero_division=0))
-                f1 = float(f1_score(target_dataset.labels, predictions, average="macro", zero_division=0))
+                baseline_metrics, _ = self._evaluate(
+                    request.classifier,
+                    source_features,
+                    source_dataset.labels,
+                    target_features,
+                    target_dataset.labels,
+                )
+            except RunCancelled:
+                raise
+            except Exception:  # noqa: BLE001 - a missing baseline must not sink the run
+                baseline_metrics = None
 
-            metrics = EvaluationMetrics(
-                accuracy=accuracy,
-                precision=precision,
-                recall=recall,
-                f1_score=f1,
-                total_samples=total_samples,
-                correct_predictions=correct_predictions,
-                wrong_predictions=wrong_predictions,
-            )
+            if baseline_metrics is not None:
+                accuracy_delta = metrics.accuracy - baseline_metrics.accuracy
+                negative_transfer = NegativeTransferAnalysis(
+                    baseline=baseline_metrics,
+                    adapted=metrics,
+                    accuracy_delta=accuracy_delta,
+                    f1_delta=metrics.f1_score - baseline_metrics.f1_score,
+                    is_negative_transfer=accuracy_delta < -NEGATIVE_TRANSFER_TOLERANCE,
+                )
+
+        if control is not None:
+            control.checkpoint()
+        alignment = self._measure_alignment(
+            source_features, target_features, transformed_source, transformed_target
+        )
 
         return TransferLearningResult(
             source_dataset=source_dataset,
@@ -216,6 +218,72 @@ class RunTransferLearningUseCase:
             target_predictions=target_predictions,
             target_actuals=target_actuals,
             prediction_correctness=prediction_correctness,
+            preprocessed_source=source_features,
+            preprocessed_target=target_features,
+            alignment=alignment,
+            negative_transfer=negative_transfer,
+        )
+
+    @staticmethod
+    def _measure_alignment(
+        source_before, target_before, source_after, target_after
+    ) -> DomainAlignment | None:
+        """MMD across the domain gap before and after the method ran.
+
+        Returns ``None`` rather than raising if MMD cannot be computed (for
+        example a method that emits source and target in different feature
+        spaces) — the alignment panel is informational, and losing it must
+        not cost the user the whole run.
+        """
+        try:
+            mmd_before = compute_mmd(source_before, target_before)
+            mmd_after = compute_mmd(source_after, target_after)
+        except Exception:  # noqa: BLE001 - reported as "unavailable" in the UI
+            return None
+        change = percentage_change(mmd_before, mmd_after)
+        return DomainAlignment(
+            mmd_before=mmd_before,
+            mmd_after=mmd_after,
+            change_percent=change,
+            status=classify_alignment(change),
+        )
+
+    def _evaluate(
+        self, classifier_name: str, train_x, train_y, test_x, test_y
+    ) -> tuple[EvaluationMetrics, np.ndarray]:
+        """Fit *classifier_name* on the source half and score it on the target.
+
+        Shared by the adapted run and the no-adaptation baseline so the two
+        are strictly comparable — same classifier, same averaging fallback.
+        """
+        clf = self._build_classifier(classifier_name)
+        clf.fit(train_x, train_y)
+        predictions = clf.predict(test_x)
+
+        total_samples = len(test_y)
+        correct_predictions = int(np.sum(predictions == test_y))
+
+        accuracy = float(accuracy_score(test_y, predictions))
+        try:
+            precision = float(precision_score(test_y, predictions, average="binary", zero_division=0))
+            recall = float(recall_score(test_y, predictions, average="binary", zero_division=0))
+            f1 = float(f1_score(test_y, predictions, average="binary", zero_division=0))
+        except ValueError:
+            precision = float(precision_score(test_y, predictions, average="macro", zero_division=0))
+            recall = float(recall_score(test_y, predictions, average="macro", zero_division=0))
+            f1 = float(f1_score(test_y, predictions, average="macro", zero_division=0))
+
+        return (
+            EvaluationMetrics(
+                accuracy=accuracy,
+                precision=precision,
+                recall=recall,
+                f1_score=f1,
+                total_samples=total_samples,
+                correct_predictions=correct_predictions,
+                wrong_predictions=total_samples - correct_predictions,
+            ),
+            predictions,
         )
 
     def execute_batch(

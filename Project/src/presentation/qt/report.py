@@ -29,6 +29,7 @@ from pathlib import Path
 from domain.entities import DatasetRecord, EvaluationRecord, ExperimentHistoryEntry
 from domain.models import BatchTransferLearningResult, TransferLearningResult
 from presentation.qt.export_options_dialog import (
+    SECTION_ALIGNMENT,
     SECTION_CONFIGURATION,
     SECTION_DATASET,
     SECTION_EVALUATION,
@@ -90,6 +91,64 @@ def _metrics_tables(metrics) -> list[str]:
     return parts
 
 
+def _alignment_tables(result: TransferLearningResult, palette: dict[str, str]) -> list[str]:
+    """Domain alignment (MMD) and the negative-transfer verdict.
+
+    Both come off the result as recorded by the use case, so the PDF states
+    the same numbers the Feature Space tab showed — nothing is recomputed
+    here from the plot.
+    """
+    alignment = result.alignment
+    analysis = result.negative_transfer
+    if alignment is None and analysis is None:
+        return []
+
+    parts: list[str] = ["<h2>Domain Alignment &amp; Transfer Analysis</h2>"]
+
+    if alignment is not None:
+        parts.append("<table width='100%'>")
+        parts.append(
+            "<tr><th>MMD Before</th><th>MMD After</th><th>Change</th>"
+            "<th>Alignment Status</th></tr>"
+        )
+        parts.append(
+            f"<tr><td class='num'>{alignment.mmd_before:.6f}</td>"
+            f"<td class='num'>{alignment.mmd_after:.6f}</td>"
+            f"<td class='num'>{alignment.change_percent:+.2f}%</td>"
+            f"<td>{escape(alignment.status)}</td></tr></table>"
+        )
+        parts.append(
+            "<p class='meta'>MMD is measured across the domain gap in the "
+            "preprocessed input space (before) and the method's output space "
+            "(after); a positive change means the domains moved closer.</p>"
+        )
+
+    if analysis is not None:
+        parts.append("<table width='100%' style='margin-top:8px'>")
+        parts.append(
+            "<tr><th>Target Metric</th><th>Without Adaptation</th>"
+            "<th>After Adaptation</th><th>Change</th></tr>"
+        )
+        for label, baseline, adapted, delta in (
+            ("Accuracy", analysis.baseline.accuracy, analysis.adapted.accuracy, analysis.accuracy_delta),
+            ("F1 Score", analysis.baseline.f1_score, analysis.adapted.f1_score, analysis.f1_delta),
+        ):
+            parts.append(
+                f"<tr><td>{label}</td><td class='num'>{baseline:.4f}</td>"
+                f"<td class='num'>{adapted:.4f}</td>"
+                f"<td class='num'>{delta:+.4f}</td></tr>"
+            )
+        parts.append("</table>")
+
+        if analysis.is_negative_transfer:
+            parts.append(
+                f"<p style='color:{palette['danger']}; font-weight:bold; margin-top:8px;'>"
+                "Potential Negative Transfer — target accuracy fell against the same "
+                "classifier trained without adaptation.</p>"
+            )
+    return parts
+
+
 def build_report_html(
     result: TransferLearningResult,
     config_rows: list[tuple[str, str]],
@@ -97,6 +156,8 @@ def build_report_html(
     chart_html: str,
     performed_by: str,
     sections: set[str],
+    feature_space_html: str = "",
+    feature_space_rows: list[tuple[str, str]] | None = None,
 ) -> str:
     """Render one transfer-learning run (single or one batch pair) as a
     standalone HTML report.
@@ -105,6 +166,10 @@ def build_report_html(
     shown under "Configuration". *chart_html* is pre-rendered markup (e.g.
     from ``AnalyticsChartsWidget.render_to_base64_html()``); pass "" to omit
     the Visual Analytics section regardless of *sections*.
+
+    *feature_space_html* / *feature_space_rows* carry the Feature Space tab's
+    scatter plot and the projection/stage it was drawn with, so the reader
+    knows which view of the data they are looking at.
     """
     metrics = result.metrics
     parts = _page_header("Transfer Learning Evaluation Report", performed_by)
@@ -131,6 +196,21 @@ def build_report_html(
     if SECTION_VISUALIZATIONS in sections and chart_html:
         parts.append("<h2>Visual Analytics</h2>")
         parts.append(chart_html)
+
+    if SECTION_VISUALIZATIONS in sections and feature_space_html:
+        parts.append("<h2>Feature Space Projection</h2>")
+        if feature_space_rows:
+            parts.append("<table width='100%'>")
+            for label, value in feature_space_rows:
+                parts.append(
+                    f"<tr><th style='width:35%'>{escape(label)}</th>"
+                    f"<td>{escape(str(value))}</td></tr>"
+                )
+            parts.append("</table>")
+        parts.append(feature_space_html)
+
+    if SECTION_ALIGNMENT in sections:
+        parts += _alignment_tables(result, palette)
 
     if SECTION_EVALUATION in sections and result.target_predictions is not None:
         parts.append("<h2>Target Predictions</h2><table width='100%'>")

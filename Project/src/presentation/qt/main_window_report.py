@@ -128,12 +128,17 @@ class MainWindowReportMixin:
     # Shared plumbing
     # ------------------------------------------------------------------
     def _pick_sections(
-        self, *, visualizations_available: bool, unavailable_reason: str = ""
+        self,
+        *,
+        visualizations_available: bool,
+        unavailable_reason: str = "",
+        alignment_available: bool = False,
     ) -> set[str] | None:
         dialog = ExportOptionsDialog(
             build_style_sheet(self._palette),
             visualizations_available=visualizations_available,
             unavailable_reason=unavailable_reason,
+            alignment_available=alignment_available,
             parent=self,
         )
         if dialog.exec_() != QDialog.Accepted:
@@ -198,7 +203,11 @@ class MainWindowReportMixin:
         result = self._last_result
         if result is None:
             return
-        sections = self._pick_sections(visualizations_available=True)
+        sections = self._pick_sections(
+            visualizations_available=True,
+            alignment_available=result.alignment is not None
+            or result.negative_transfer is not None,
+        )
         if sections is None:
             return
         html = build_report_html(
@@ -208,6 +217,8 @@ class MainWindowReportMixin:
             self._charts_widget.render_to_base64_html(),
             self._performed_by(),
             sections,
+            feature_space_html=self._visualization_tab.render_to_base64_html(),
+            feature_space_rows=self._visualization_tab.analysis_rows(),
         )
         self._write_pdf_report(html, "Transfer_Learning_Report.pdf")
 
@@ -238,7 +249,11 @@ class MainWindowReportMixin:
                 self, "Nothing to Export", "This pair failed and produced no result."
             )
             return
-        sections = self._pick_sections(visualizations_available=True)
+        sections = self._pick_sections(
+            visualizations_available=True,
+            alignment_available=pair.result.alignment is not None
+            or pair.result.negative_transfer is not None,
+        )
         if sections is None:
             return
         html = build_report_html(

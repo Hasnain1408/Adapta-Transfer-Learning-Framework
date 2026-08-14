@@ -30,6 +30,50 @@ class EvaluationMetrics:
 
 
 @dataclass(frozen=True)
+class DomainAlignment:
+    """How far apart the two domains sit, before vs. after adaptation.
+
+    ``mmd_before`` is measured in the preprocessed input space and
+    ``mmd_after`` in the method's output space -- see ``domain/mmd.py`` for
+    why those two spaces are comparable in ratio but not in absolute terms.
+    """
+
+    mmd_before: float
+    mmd_after: float
+    #: ``((before - after) / before) * 100``; positive means the gap closed.
+    change_percent: float
+    #: One of the ``mmd.STATUS_*`` labels, derived from ``change_percent``.
+    status: str
+    kernel: str = "rbf"
+
+
+@dataclass(frozen=True)
+class NegativeTransferAnalysis:
+    """Did adaptation actually help the *task*, not just the distributions?
+
+    ``baseline`` is the same classifier trained on the preprocessed source
+    and evaluated on the preprocessed target -- i.e. the score you would get
+    by ignoring domain adaptation entirely. Negative transfer is that
+    comparison coming out worse, which is a stronger claim than an MMD or a
+    scatter plot can make on its own.
+    """
+
+    baseline: EvaluationMetrics
+    adapted: EvaluationMetrics
+    accuracy_delta: float
+    f1_delta: float
+    #: True when adaptation lost more than ``NEGATIVE_TRANSFER_TOLERANCE``
+    #: accuracy against the no-adaptation baseline.
+    is_negative_transfer: bool
+
+
+#: Accuracy may wobble by a hair for reasons unrelated to the method (tie
+#: breaking in k-NN, say), so a loss only counts as negative transfer past
+#: this margin.
+NEGATIVE_TRANSFER_TOLERANCE = 0.005
+
+
+@dataclass(frozen=True)
 class TransferLearningResult:
     source_dataset: "Dataset"
     target_dataset: "Dataset"
@@ -40,6 +84,15 @@ class TransferLearningResult:
     target_predictions: Optional[np.ndarray] = None
     target_actuals: Optional[np.ndarray] = None
     prediction_correctness: Optional[list[str]] = None
+    #: Features as they entered ``method.run`` -- normalized and standardized
+    #: but not yet adapted. This is the "Before Adaptation" view in the
+    #: Visualization tab and the space ``alignment.mmd_before`` is measured
+    #: in; keeping it means before/after are the same samples in the same
+    #: order, so the two projections are directly comparable.
+    preprocessed_source: Optional[np.ndarray] = None
+    preprocessed_target: Optional[np.ndarray] = None
+    alignment: Optional[DomainAlignment] = None
+    negative_transfer: Optional[NegativeTransferAnalysis] = None
 
 @dataclass(frozen=True)
 class Dataset:

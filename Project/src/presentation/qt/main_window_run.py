@@ -398,6 +398,13 @@ class MainWindowRunMixin:
         self._show_predictions(result)
         self._show_transformed_features(result)
         self._charts_widget.update_result(result)
+        request = self._last_request
+        self._visualization_tab.update_result(
+            result,
+            method_name=request.method_name if request else "—",
+            source_name=Path(request.source_path).name if request else "—",
+            target_name=Path(request.target_path).name if request else "—",
+        )
 
         self._results_fullscreen_button.setEnabled(True)
 

@@ -38,6 +38,7 @@ from PyQt5.QtWidgets import (
 
 from domain.entities import UserRole
 from presentation.qt.charts_widget import AnalyticsChartsWidget
+from presentation.qt.visualization_tab import VisualizationTab
 from presentation.qt.dataset_summary_view import DatasetSummaryView
 from presentation.qt.history_tab import HistoryTab
 from presentation.qt.metric_card import MetricCard
@@ -784,10 +785,12 @@ class MainWindowUIMixin:
         batch_layout.addWidget(self._batch_results_table, 1)
 
         self._charts_widget = AnalyticsChartsWidget(self._palette)
+        self._visualization_tab = VisualizationTab(self._palette)
         self._history_tab = HistoryTab(self._catalog, self._palette)
 
         self._results_tabs.addTab(predictions_page, "Predictions")
         self._results_tabs.addTab(self._charts_widget, "Visualizations")
+        self._results_tabs.addTab(self._visualization_tab, "Feature Space")
         self._results_tabs.addTab(features_page, "Transformed Features")
         self._results_tabs.addTab(self._summary_view, "Dataset Summary")
         self._results_tabs.addTab(batch_page, "Batch Results")
@@ -795,7 +798,7 @@ class MainWindowUIMixin:
         self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
         self._history_tab_index = self._results_tabs.indexOf(self._history_tab)
 
-        # These six are permanent — only dynamically opened experiment-detail
+        # These seven are permanent — only dynamically opened experiment-detail
         # tabs (see _open_experiment_detail_tab) are meant to be closable.
         for index in range(self._results_tabs.count()):
             self._results_tabs.tabBar().setTabButton(index, QTabBar.RightSide, None)

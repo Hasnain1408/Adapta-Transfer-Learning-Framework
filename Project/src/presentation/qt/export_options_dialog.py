@@ -25,12 +25,14 @@ SECTION_CONFIGURATION = "configuration"
 SECTION_DATASET = "dataset"
 SECTION_EVALUATION = "evaluation"
 SECTION_VISUALIZATIONS = "visualizations"
+SECTION_ALIGNMENT = "alignment"
 
 _SECTION_LABELS: list[tuple[str, str]] = [
     (SECTION_CONFIGURATION, "Experiment configuration"),
     (SECTION_DATASET, "Dataset properties"),
     (SECTION_EVALUATION, "Evaluation results"),
     (SECTION_VISUALIZATIONS, "Visualizations"),
+    (SECTION_ALIGNMENT, "Domain alignment & transfer analysis"),
 ]
 
 
@@ -48,6 +50,7 @@ class ExportOptionsDialog(QDialog):
         *,
         visualizations_available: bool = True,
         unavailable_reason: str = "",
+        alignment_available: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -73,6 +76,12 @@ class ExportOptionsDialog(QDialog):
                 checkbox.setEnabled(False)
                 checkbox.setToolTip(
                     unavailable_reason or "Visualizations are not available for this report."
+                )
+            if key == SECTION_ALIGNMENT and not alignment_available:
+                checkbox.setChecked(False)
+                checkbox.setEnabled(False)
+                checkbox.setToolTip(
+                    "MMD and negative-transfer analysis are only recorded for a live run."
                 )
             layout.addWidget(checkbox)
             self._checkboxes[key] = checkbox
@@ -102,4 +111,5 @@ __all__ = [
     "SECTION_DATASET",
     "SECTION_EVALUATION",
     "SECTION_VISUALIZATIONS",
+    "SECTION_ALIGNMENT",
 ]
