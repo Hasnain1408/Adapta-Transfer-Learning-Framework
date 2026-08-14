@@ -8,3 +8,4 @@ matplotlib>=3.7.0
 # PostgreSQL driver. The -binary wheel ships its own libpq, so no system
 # postgresql-dev package is needed to install it.
 psycopg2-binary>=2.9.9
+pyinstaller>=5.0.0
