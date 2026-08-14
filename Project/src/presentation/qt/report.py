@@ -15,9 +15,9 @@ Three entry points share one visual language (``_HEAD``/``_page_header``):
   predictions table, no charts) since none of that is stored.
 
 ``sections`` (a set of the ``export_options_dialog.SECTION_*`` keys) gates
-the Configuration/Dataset/Evaluation/Visualizations blocks in all three;
-"Performed by" and "Generated" are not gateable — a report always says who
-ran it and when it was produced.
+the Configuration/Dataset/Evaluation/Visualizations/Alignment/Predictions
+blocks in all three. The header is not gateable — a report always says who
+ran it, when the experiment itself ran, and when the PDF was produced.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from presentation.qt.export_options_dialog import (
     SECTION_CONFIGURATION,
     SECTION_DATASET,
     SECTION_EVALUATION,
+    SECTION_PREDICTIONS,
     SECTION_VISUALIZATIONS,
 )
 
@@ -51,13 +52,60 @@ _HEAD = (
 )
 
 
-def _page_header(title: str, performed_by: str) -> list[str]:
+def _format_timestamp(value: datetime | None) -> str:
+    """Render a run timestamp in local time, tolerating a tz-aware value.
+
+    Persisted rows come back from a TIMESTAMPTZ column as tz-aware, while a
+    live run records a naive local ``datetime.now()``; ``astimezone()`` on a
+    naive value assumes local time, so both land in the reader's zone.
+    """
+    if value is None:
+        return ""
+    try:
+        return value.astimezone().strftime("%d %B %Y, %H:%M:%S")
+    except (ValueError, OSError):  # out-of-range or unconvertible timestamp
+        return str(value)
+
+
+def _format_duration(started: datetime, finished: datetime) -> str:
+    """``finished - started`` as a short human string, or "" if nonsensical."""
+    seconds = (finished - started).total_seconds()
+    if seconds < 0:
+        return ""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, seconds = divmod(int(seconds), 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m"
+
+
+def _page_header(
+    title: str,
+    performed_by: str,
+    experiment_time: datetime | None = None,
+    finished_time: datetime | None = None,
+) -> list[str]:
+    """Title block: who ran it, when it ran, and when the PDF was produced.
+
+    The experiment time and the generation time are deliberately separate
+    lines — a report can be exported days after the run (or re-exported from
+    history repeatedly), so collapsing the two would misdate the experiment.
+    """
     generated = datetime.now().strftime("%d %B %Y, %H:%M")
-    return [
-        _HEAD,
-        f"<h1>{escape(title)}</h1>",
-        f"<p class='meta'>Generated {escape(generated)}  ·  Performed by {escape(performed_by)}</p>",
-    ]
+    parts = [_HEAD, f"<h1>{escape(title)}</h1>"]
+    if experiment_time is not None:
+        line = f"Experiment run {_format_timestamp(experiment_time)}"
+        if finished_time is not None:
+            duration = _format_duration(experiment_time, finished_time)
+            if duration:
+                line += f"  ·  took {duration}"
+        parts.append(f"<p class='meta'>{escape(line)}</p>")
+    parts.append(
+        f"<p class='meta'>Generated {escape(generated)}  ·  Performed by {escape(performed_by)}</p>"
+    )
+    return parts
 
 
 def _config_table(config_rows: list[tuple[str, str]]) -> list[str]:
@@ -172,7 +220,12 @@ def build_report_html(
     knows which view of the data they are looking at.
     """
     metrics = result.metrics
-    parts = _page_header("Transfer Learning Evaluation Report", performed_by)
+    parts = _page_header(
+        "Transfer Learning Evaluation Report",
+        performed_by,
+        result.started_at,
+        result.completed_at,
+    )
 
     if SECTION_CONFIGURATION in sections:
         parts += _config_table(config_rows)
@@ -212,7 +265,10 @@ def build_report_html(
     if SECTION_ALIGNMENT in sections:
         parts += _alignment_tables(result, palette)
 
-    if SECTION_EVALUATION in sections and result.target_predictions is not None:
+    # Its own section rather than riding along with Evaluation: this table is
+    # one row per target sample, so on a large run it dominates the PDF and
+    # is the section a reader is most likely to want left out.
+    if SECTION_PREDICTIONS in sections and result.target_predictions is not None:
         parts.append("<h2>Target Predictions</h2><table width='100%'>")
         parts.append(
             "<tr><th>Sample</th><th>Actual Label</th><th>Predicted Label</th><th>Result</th></tr>"
@@ -245,7 +301,12 @@ def build_batch_report_html(
     batch has no single result to chart; export an individual pair's report
     from its detail tab for that.
     """
-    parts = _page_header("Transfer Learning Batch Report", performed_by)
+    parts = _page_header(
+        "Transfer Learning Batch Report",
+        performed_by,
+        batch_result.started_at,
+        batch_result.completed_at,
+    )
 
     if SECTION_CONFIGURATION in sections:
         parts += _config_table(config_rows)
@@ -318,7 +379,9 @@ def build_history_report_html(
     """
     experiment = entry.experiment
     performed_by = entry.user.name if entry.user else "Unknown user (account deleted)"
-    parts = _page_header(f"Experiment #{experiment.id} Report", performed_by)
+    parts = _page_header(
+        f"Experiment #{experiment.id} Report", performed_by, experiment.date
+    )
 
     if SECTION_CONFIGURATION in sections:
         config_rows = [

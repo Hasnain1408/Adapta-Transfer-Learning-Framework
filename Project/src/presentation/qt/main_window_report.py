@@ -133,12 +133,14 @@ class MainWindowReportMixin:
         visualizations_available: bool,
         unavailable_reason: str = "",
         alignment_available: bool = False,
+        predictions_available: bool = False,
     ) -> set[str] | None:
         dialog = ExportOptionsDialog(
             build_style_sheet(self._palette),
             visualizations_available=visualizations_available,
             unavailable_reason=unavailable_reason,
             alignment_available=alignment_available,
+            predictions_available=predictions_available,
             parent=self,
         )
         if dialog.exec_() != QDialog.Accepted:
@@ -207,6 +209,7 @@ class MainWindowReportMixin:
             visualizations_available=True,
             alignment_available=result.alignment is not None
             or result.negative_transfer is not None,
+            predictions_available=result.target_predictions is not None,
         )
         if sections is None:
             return
@@ -253,6 +256,7 @@ class MainWindowReportMixin:
             visualizations_available=True,
             alignment_available=pair.result.alignment is not None
             or pair.result.negative_transfer is not None,
+            predictions_available=pair.result.target_predictions is not None,
         )
         if sections is None:
             return

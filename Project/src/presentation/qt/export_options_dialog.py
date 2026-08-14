@@ -26,13 +26,17 @@ SECTION_DATASET = "dataset"
 SECTION_EVALUATION = "evaluation"
 SECTION_VISUALIZATIONS = "visualizations"
 SECTION_ALIGNMENT = "alignment"
+SECTION_PREDICTIONS = "predictions"
 
 _SECTION_LABELS: list[tuple[str, str]] = [
     (SECTION_CONFIGURATION, "Experiment configuration"),
     (SECTION_DATASET, "Dataset properties"),
     (SECTION_EVALUATION, "Evaluation results"),
     (SECTION_VISUALIZATIONS, "Visualizations"),
-    (SECTION_ALIGNMENT, "Domain alignment & transfer analysis"),
+    # "&&" renders as a literal ampersand — a single "&" would be swallowed
+    # as a Qt mnemonic, underlining the next letter instead.
+    (SECTION_ALIGNMENT, "Domain alignment && transfer analysis"),
+    (SECTION_PREDICTIONS, "Target-domain prediction table"),
 ]
 
 
@@ -51,6 +55,7 @@ class ExportOptionsDialog(QDialog):
         visualizations_available: bool = True,
         unavailable_reason: str = "",
         alignment_available: bool = True,
+        predictions_available: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -76,6 +81,13 @@ class ExportOptionsDialog(QDialog):
                 checkbox.setEnabled(False)
                 checkbox.setToolTip(
                     unavailable_reason or "Visualizations are not available for this report."
+                )
+            if key == SECTION_PREDICTIONS and not predictions_available:
+                checkbox.setChecked(False)
+                checkbox.setEnabled(False)
+                checkbox.setToolTip(
+                    "Per-sample predictions are only available for a labelled "
+                    "single run — they are not stored in history."
                 )
             if key == SECTION_ALIGNMENT and not alignment_available:
                 checkbox.setChecked(False)
@@ -112,4 +124,5 @@ __all__ = [
     "SECTION_EVALUATION",
     "SECTION_VISUALIZATIONS",
     "SECTION_ALIGNMENT",
+    "SECTION_PREDICTIONS",
 ]

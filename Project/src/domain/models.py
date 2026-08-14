@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -93,6 +94,11 @@ class TransferLearningResult:
     preprocessed_target: Optional[np.ndarray] = None
     alignment: Optional[DomainAlignment] = None
     negative_transfer: Optional[NegativeTransferAnalysis] = None
+    #: When the run itself started and finished — not when a report was
+    #: generated from it, which can be much later (or repeatedly). Both are
+    #: naive local times, matching what the UI and reports display.
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 @dataclass(frozen=True)
 class Dataset:
@@ -146,3 +152,7 @@ class BatchTransferLearningResult:
     #: True when the batch was cancelled partway through -- ``pairs`` then
     #: holds only the pairs that finished before the cancellation landed.
     cancelled: bool = False
+    #: Span of the whole batch, not of any single pair (each pair carries its
+    #: own timestamps on its ``TransferLearningResult``).
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None

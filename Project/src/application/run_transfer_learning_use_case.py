@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from itertools import permutations
 
 from domain.interfaces import DatasetLoader, TransferLearningMethod
@@ -70,6 +71,7 @@ class RunTransferLearningUseCase:
     def execute(
         self, request: TransferLearningRequest, control: RunControl | None = None
     ) -> TransferLearningResult:
+        started_at = datetime.now()
         if control is not None:
             control.checkpoint()
 
@@ -222,6 +224,8 @@ class RunTransferLearningUseCase:
             preprocessed_target=target_features,
             alignment=alignment,
             negative_transfer=negative_transfer,
+            started_at=started_at,
+            completed_at=datetime.now(),
         )
 
     @staticmethod
@@ -305,6 +309,7 @@ class RunTransferLearningUseCase:
         if len(request.file_paths) < 2:
             raise ValueError("Batch mode requires at least two dataset files.")
 
+        started_at = datetime.now()
         pairs: list[PairTransferLearningResult] = []
         cancelled = False
         for source_path, target_path in permutations(request.file_paths, 2):
@@ -354,7 +359,13 @@ class RunTransferLearningUseCase:
                 wrong_predictions=sum(m.wrong_predictions for m in metric_sets),
             )
 
-        return BatchTransferLearningResult(pairs=pairs, average_metrics=average_metrics, cancelled=cancelled)
+        return BatchTransferLearningResult(
+            pairs=pairs,
+            average_metrics=average_metrics,
+            cancelled=cancelled,
+            started_at=started_at,
+            completed_at=datetime.now(),
+        )
 
     # ------------------------------------------------------------------
     # Classifier factory
