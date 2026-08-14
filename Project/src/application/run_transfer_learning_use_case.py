@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from itertools import permutations
+from time import perf_counter
 
 from domain.interfaces import DatasetLoader, TransferLearningMethod
 from domain.mmd import classify_alignment, compute_mmd, percentage_change
@@ -72,6 +73,7 @@ class RunTransferLearningUseCase:
         self, request: TransferLearningRequest, control: RunControl | None = None
     ) -> TransferLearningResult:
         started_at = datetime.now()
+        run_started = perf_counter()
         if control is not None:
             control.checkpoint()
 
@@ -144,11 +146,24 @@ class RunTransferLearningUseCase:
                 setattr(method, attribute, getattr(request, field))
 
 
+        # Timed on its own so the cost attributable to the *method* can be
+        # read apart from the loading and classification around it.
+        adaptation_started = perf_counter()
+        paused_before_adaptation = control.paused_seconds if control is not None else 0.0
         transformed_source, transformed_target = method.run(
             source_features,
             target_features,
             source_labels=source_dataset.labels,
             control=control,
+        )
+        # A pause blocks inside method.run's own checkpoints, so the elapsed
+        # wall clock would otherwise count however long the user left it
+        # paused as if it were compute.
+        paused_during_adaptation = (
+            control.paused_seconds - paused_before_adaptation if control is not None else 0.0
+        )
+        adaptation_seconds = max(
+            0.0, perf_counter() - adaptation_started - paused_during_adaptation
         )
 
         output_feature_names = [
@@ -226,6 +241,13 @@ class RunTransferLearningUseCase:
             negative_transfer=negative_transfer,
             started_at=started_at,
             completed_at=datetime.now(),
+            duration_seconds=max(
+                0.0,
+                perf_counter()
+                - run_started
+                - (control.paused_seconds if control is not None else 0.0),
+            ),
+            adaptation_seconds=adaptation_seconds,
         )
 
     @staticmethod
@@ -310,6 +332,7 @@ class RunTransferLearningUseCase:
             raise ValueError("Batch mode requires at least two dataset files.")
 
         started_at = datetime.now()
+        batch_started = perf_counter()
         pairs: list[PairTransferLearningResult] = []
         cancelled = False
         for source_path, target_path in permutations(request.file_paths, 2):
@@ -365,6 +388,12 @@ class RunTransferLearningUseCase:
             cancelled=cancelled,
             started_at=started_at,
             completed_at=datetime.now(),
+            duration_seconds=max(
+                0.0,
+                perf_counter()
+                - batch_started
+                - (control.paused_seconds if control is not None else 0.0),
+            ),
         )
 
     # ------------------------------------------------------------------

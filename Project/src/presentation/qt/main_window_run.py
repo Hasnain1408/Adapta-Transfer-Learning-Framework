@@ -22,6 +22,7 @@ from domain.models import (
 )
 from domain.run_control import RunControl
 from presentation.qt import message_box
+from presentation.qt.duration import format_duration
 from presentation.qt.main_window_ui import DATASET_FILTER
 from presentation.qt.result_tables import populate_batch_results_table
 from presentation.qt.style import build_style_sheet
@@ -62,6 +63,24 @@ class MainWindowRunMixin:
         if self._current_user is not None:
             parts.append(self._current_user.name)
         self._context_label.setText("  ·  ".join(parts))
+
+    @staticmethod
+    def _timing_note(result: TransferLearningResult) -> str:
+        """"completed in 1.20s (adaptation 0.043s)" for the metrics caption.
+
+        Both figures are shown because only the second is comparable across
+        methods — the first also carries file loading and classifier fitting,
+        which cost the same whichever method was chosen.
+        """
+        total = format_duration(result.duration_seconds)
+        if not total:
+            return ""
+        adaptation = format_duration(result.adaptation_seconds)
+        return (
+            f"completed in {total} (adaptation {adaptation})"
+            if adaptation
+            else f"completed in {total}"
+        )
 
     def _set_status(self, text: str, color_key: str) -> None:
         """Show a status message. ``color_key`` names a semantic palette entry
@@ -390,11 +409,12 @@ class MainWindowRunMixin:
     def _on_success(self, result: TransferLearningResult) -> None:
         self._last_result = result
         self._last_run_kind = "single"
-        self._set_status("Completed", "success")
+        elapsed = format_duration(result.duration_seconds)
+        self._set_status(f"Completed in {elapsed}" if elapsed else "Completed", "success")
         self._export_button.setEnabled(True)
         self._export_action.setEnabled(True)
 
-        self._show_metrics(result.metrics)
+        self._show_metrics(result.metrics, self._timing_note(result))
         self._show_dataset_summary(result)
         self._show_predictions(result)
         self._show_transformed_features(result)
@@ -440,6 +460,9 @@ class MainWindowRunMixin:
         else:
             status = f"Batch completed ({failed} pair(s) failed)"
             status_key = "warning"
+        batch_elapsed = format_duration(batch_result.duration_seconds)
+        if batch_elapsed:
+            status += f" in {batch_elapsed}"
         self._set_status(status, status_key)
 
         # _export_pdf_report dispatches on _last_run_kind, so this is safe to

@@ -99,6 +99,16 @@ class TransferLearningResult:
     #: naive local times, matching what the UI and reports display.
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    #: Wall-clock seconds for the whole run: loading, preprocessing,
+    #: adaptation, and both evaluations. Measured with a monotonic clock
+    #: rather than subtracting the timestamps above, which would skew if the
+    #: system clock stepped mid-run (NTP, DST).
+    duration_seconds: Optional[float] = None
+    #: Seconds spent inside the method's own ``run()`` alone. This is the
+    #: figure to compare methods on: ``duration_seconds`` also carries file
+    #: I/O and classifier fitting, which are the same work whichever method
+    #: was selected and would flatten the differences between them.
+    adaptation_seconds: Optional[float] = None
 
 @dataclass(frozen=True)
 class Dataset:
@@ -156,3 +166,6 @@ class BatchTransferLearningResult:
     #: own timestamps on its ``TransferLearningResult``).
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    #: Wall clock for the batch as a whole. Not the sum of the pairs': a
+    #: failed pair still costs time but contributes no result to sum from.
+    duration_seconds: Optional[float] = None

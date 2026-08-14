@@ -56,6 +56,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 from domain.models import TransferLearningResult
+from presentation.qt.duration import format_duration
 from presentation.qt.style import DARK_PALETTE
 
 STAGE_BEFORE = "Before Adaptation"
@@ -827,6 +828,8 @@ class VisualizationTab(QWidget):
             ("Method", self._method_name),
             ("Projection", self._projection_combo.currentText()),
             ("Stage", self._stage_combo.currentText()),
+            ("Execution Time", format_duration(result.duration_seconds) or "—"),
+            ("Adaptation Time", format_duration(result.adaptation_seconds) or "—"),
         ]
 
     def _update_status(self) -> None:

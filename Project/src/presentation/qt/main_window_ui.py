@@ -42,6 +42,7 @@ from presentation.qt.visualization_tab import VisualizationTab
 from presentation.qt.dataset_summary_view import DatasetSummaryView
 from presentation.qt.history_tab import HistoryTab
 from presentation.qt.metric_card import MetricCard
+from presentation.qt.result_tables import BATCH_RESULTS_HEADERS
 from presentation.qt.title_bar import TitleBar
 
 #: ``(display label, value)``. The value is what the use case dispatches on, so
@@ -344,34 +345,14 @@ class MainWindowUIMixin:
         self._features_caption.setObjectName("captionLabel")
         self._features_caption.hide()
 
-        self._batch_results_table = self._build_table(
-            [
-                "Source",
-                "Target",
-                "Status",
-                "Accuracy",
-                "Precision",
-                "Recall",
-                "F1 Score",
-                "Samples",
-                "Correct",
-                "Wrong",
-            ]
-        )
+        # Built from the shared constant rather than a second copy of the
+        # column list — populate_batch_results_table fills by position, so a
+        # divergence here would silently shift every value one column over.
+        self._batch_results_table = self._build_table(list(BATCH_RESULTS_HEADERS))
         self._align_headers(
             self._batch_results_table,
-            [
-                Qt.AlignLeft,
-                Qt.AlignLeft,
-                Qt.AlignCenter,
-                Qt.AlignRight,
-                Qt.AlignRight,
-                Qt.AlignRight,
-                Qt.AlignRight,
-                Qt.AlignRight,
-                Qt.AlignRight,
-                Qt.AlignRight,
-            ],
+            [Qt.AlignLeft, Qt.AlignLeft, Qt.AlignCenter]
+            + [Qt.AlignRight] * (len(BATCH_RESULTS_HEADERS) - 3),
         )
         self._batch_summary_label = QLabel(
             "Run a batch to see per-pair results and the average across the batch."

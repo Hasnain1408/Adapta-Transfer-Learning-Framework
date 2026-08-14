@@ -20,12 +20,22 @@ from presentation.qt.style import build_style_sheet
 class MainWindowResultsMixin:
     """Metrics/predictions/dataset-summary/transformed-features rendering."""
 
-    def _show_metrics(self, metrics: EvaluationMetrics | None) -> None:
+    def _show_metrics(
+        self, metrics: EvaluationMetrics | None, timing_note: str = ""
+    ) -> None:
+        """Fill the four metric cards and the caption beneath them.
+
+        *timing_note* is appended to the caption — the execution time is not
+        derivable from ``metrics``, and an unlabelled run still has a timing
+        worth showing even though it has no metrics at all.
+        """
+        suffix = f"  ·  {timing_note}" if timing_note else ""
         if metrics is None:
             for card in self._metric_cards:
                 card.set_value(None)
             self._counts_label.setText(
                 "Metrics unavailable — the source or target dataset has no labels."
+                + suffix
             )
             return
 
@@ -36,7 +46,7 @@ class MainWindowResultsMixin:
         self._counts_label.setText(
             f"{metrics.total_samples} target samples evaluated  ·  "
             f"{metrics.correct_predictions} correct  ·  "
-            f"{metrics.wrong_predictions} incorrect"
+            f"{metrics.wrong_predictions} incorrect" + suffix
         )
 
     def _show_dataset_summary(self, result: TransferLearningResult) -> None:

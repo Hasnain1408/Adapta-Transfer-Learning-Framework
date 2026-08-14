@@ -28,6 +28,7 @@ from pathlib import Path
 
 from domain.entities import DatasetRecord, EvaluationRecord, ExperimentHistoryEntry
 from domain.models import BatchTransferLearningResult, TransferLearningResult
+from presentation.qt.duration import format_duration
 from presentation.qt.export_options_dialog import (
     SECTION_ALIGNMENT,
     SECTION_CONFIGURATION,
@@ -67,25 +68,11 @@ def _format_timestamp(value: datetime | None) -> str:
         return str(value)
 
 
-def _format_duration(started: datetime, finished: datetime) -> str:
-    """``finished - started`` as a short human string, or "" if nonsensical."""
-    seconds = (finished - started).total_seconds()
-    if seconds < 0:
-        return ""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    minutes, seconds = divmod(int(seconds), 60)
-    if minutes < 60:
-        return f"{minutes}m {seconds}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes}m"
-
-
 def _page_header(
     title: str,
     performed_by: str,
     experiment_time: datetime | None = None,
-    finished_time: datetime | None = None,
+    duration_seconds: float | None = None,
 ) -> list[str]:
     """Title block: who ran it, when it ran, and when the PDF was produced.
 
@@ -97,10 +84,9 @@ def _page_header(
     parts = [_HEAD, f"<h1>{escape(title)}</h1>"]
     if experiment_time is not None:
         line = f"Experiment run {_format_timestamp(experiment_time)}"
-        if finished_time is not None:
-            duration = _format_duration(experiment_time, finished_time)
-            if duration:
-                line += f"  ·  took {duration}"
+        duration = format_duration(duration_seconds)
+        if duration:
+            line += f"  ·  took {duration}"
         parts.append(f"<p class='meta'>{escape(line)}</p>")
     parts.append(
         f"<p class='meta'>Generated {escape(generated)}  ·  Performed by {escape(performed_by)}</p>"
@@ -197,6 +183,26 @@ def _alignment_tables(result: TransferLearningResult, palette: dict[str, str]) -
     return parts
 
 
+def _timing_table(result: TransferLearningResult) -> list[str]:
+    """Execution cost: whole run vs. the method's own adaptation step."""
+    total = format_duration(result.duration_seconds)
+    if not total:
+        return []
+    adaptation = format_duration(result.adaptation_seconds)
+    parts = ["<h2>Execution Time</h2><table width='100%'>"]
+    parts.append("<tr><th>Total Run</th><th>Adaptation (method only)</th></tr>")
+    parts.append(
+        f"<tr><td class='num'>{escape(total)}</td>"
+        f"<td class='num'>{escape(adaptation or '—')}</td></tr></table>"
+    )
+    parts.append(
+        "<p class='meta'>Total covers loading, preprocessing, adaptation, and "
+        "evaluation; the adaptation figure isolates the method itself and is "
+        "the one to compare across methods. Time spent paused is excluded.</p>"
+    )
+    return parts
+
+
 def build_report_html(
     result: TransferLearningResult,
     config_rows: list[tuple[str, str]],
@@ -224,7 +230,7 @@ def build_report_html(
         "Transfer Learning Evaluation Report",
         performed_by,
         result.started_at,
-        result.completed_at,
+        result.duration_seconds,
     )
 
     if SECTION_CONFIGURATION in sections:
@@ -245,6 +251,9 @@ def build_report_html(
 
     if SECTION_EVALUATION in sections and metrics is not None:
         parts += _metrics_tables(metrics)
+
+    if SECTION_EVALUATION in sections:
+        parts += _timing_table(result)
 
     if SECTION_VISUALIZATIONS in sections and chart_html:
         parts.append("<h2>Visual Analytics</h2>")
@@ -305,7 +314,7 @@ def build_batch_report_html(
         "Transfer Learning Batch Report",
         performed_by,
         batch_result.started_at,
-        batch_result.completed_at,
+        batch_result.duration_seconds,
     )
 
     if SECTION_CONFIGURATION in sections:

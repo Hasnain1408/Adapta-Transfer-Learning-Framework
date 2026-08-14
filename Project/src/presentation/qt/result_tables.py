@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QBrush, QColor
 from PyQt5.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
 
+from presentation.qt.duration import format_duration
 from domain.models import BatchTransferLearningResult, TransferLearningResult
 
 #: Column headers for a predictions table.
@@ -31,6 +32,7 @@ BATCH_RESULTS_HEADERS = [
     "Samples",
     "Correct",
     "Wrong",
+    "Time",
 ]
 
 
@@ -87,6 +89,14 @@ def populate_predictions_table(
         header.setSectionResizeMode(column, QHeaderView.Stretch)
 
 
+def _pair_time(pair) -> str:
+    """One pair's adaptation time — the method's own cost, excluding the
+    file loading and classifier fitting that surround it."""
+    if pair.result is None:
+        return ""
+    return format_duration(pair.result.adaptation_seconds)
+
+
 def populate_batch_results_table(
     table: QTableWidget, batch_result: BatchTransferLearningResult, palette: dict[str, str]
 ) -> str:
@@ -113,13 +123,15 @@ def populate_batch_results_table(
                 str(metrics.total_samples),
                 str(metrics.correct_predictions),
                 str(metrics.wrong_predictions),
+                _pair_time(pair),
             ]
         elif pair.result is not None:
             status_text, status_brush = "No labels", None
-            values = ["—"] * 7
+            values = ["—"] * 7 + [_pair_time(pair)]
         else:
             status_text, status_brush = "Error", danger_brush
-            values = [pair.error or "Unknown error"] + [""] * 6
+            # A failed pair has no result to time.
+            values = [pair.error or "Unknown error"] + [""] * 7
 
         cells = [source_name, target_name, status_text, *values]
         for column, value in enumerate(cells):
@@ -135,7 +147,7 @@ def populate_batch_results_table(
     header = table.horizontalHeader()
     for column in range(2):
         header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
-    for column in range(2, 10):
+    for column in range(2, len(BATCH_RESULTS_HEADERS)):
         header.setSectionResizeMode(column, QHeaderView.Stretch)
 
     total = len(batch_result.pairs)
