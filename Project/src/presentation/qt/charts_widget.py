@@ -141,6 +141,14 @@ class AnalyticsChartsWidget(QWidget):
         self._last_result = result
         self._render_charts()
 
+    def clear(self) -> None:
+        """Drop the rendered run and go back to the placeholder."""
+        self._last_result = None
+        self._view_combo.blockSignals(True)
+        self._view_combo.setCurrentIndex(0)
+        self._view_combo.blockSignals(False)
+        self._show_placeholder()
+
     def _on_view_changed(self, text: str) -> None:
         if self._last_result is not None:
             self._render_charts()

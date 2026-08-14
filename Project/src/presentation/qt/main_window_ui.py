@@ -287,6 +287,13 @@ class MainWindowUIMixin:
         self._export_button.setCursor(Qt.PointingHandCursor)
         self._export_button.setEnabled(False)
 
+        self._clear_button = QPushButton("Clear")
+        self._clear_button.setCursor(Qt.PointingHandCursor)
+        self._clear_button.setToolTip(
+            "Reset every configuration field and discard the displayed results, "
+            "ready for a fresh experiment. Saved experiment history is untouched."
+        )
+
         self._theme_toggle_button = QPushButton("☀  Light")
         self._theme_toggle_button.setObjectName("themeToggleButton")
         self._theme_toggle_button.setCursor(Qt.PointingHandCursor)
@@ -693,6 +700,7 @@ class MainWindowUIMixin:
         row.addLayout(pause_cancel_row)
 
         row.addWidget(self._export_button)
+        row.addWidget(self._clear_button)
         return row
 
     def _build_metrics_row(self) -> QHBoxLayout:
@@ -861,6 +869,7 @@ class MainWindowUIMixin:
         self._cancel_button.clicked.connect(self._cancel_run)
         self._export_button.clicked.connect(self._export_pdf_report)
         self._batch_export_button.clicked.connect(self._export_batch_report)
+        self._clear_button.clicked.connect(self._clear_all)
 
         self._open_source_action.triggered.connect(self._pick_source)
         self._open_target_action.triggered.connect(self._pick_target)

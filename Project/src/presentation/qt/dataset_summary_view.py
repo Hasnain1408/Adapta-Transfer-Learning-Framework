@@ -69,6 +69,18 @@ class DatasetSummaryView(QWidget):
         self._row.addWidget(self._build_card("Source Dataset", result.source_dataset))
         self._row.addWidget(self._build_card("Target Dataset", result.target_dataset))
 
+    def clear(self) -> None:
+        """Drop both dataset cards and put the placeholder back.
+
+        ``_clear`` deletes every widget in the row, the original placeholder
+        included, so this builds a fresh one rather than re-showing it.
+        """
+        self._clear()
+        self._placeholder = QLabel("Run an experiment to see dataset details.")
+        self._placeholder.setObjectName("captionLabel")
+        self._placeholder.setAlignment(Qt.AlignCenter)
+        self._row.addWidget(self._placeholder, 1)
+
     def _clear(self) -> None:
         while self._row.count():
             item = self._row.takeAt(0)
