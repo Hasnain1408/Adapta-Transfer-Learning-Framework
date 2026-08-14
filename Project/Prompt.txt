@@ -48,6 +48,68 @@ kernel type, regularization etc) will be applied to all pairs. Result will be sh
 for the batch.
 now implement this
 
+5.
+generate a file. the file will contain all the modifications you have done to run the project, and the reason of modification.
+also list questions that can be asked by teacher to evaluate
+
+6.
+I need to generate presentation slide for my course assignment. The presentation is about to propose a project idea that will solve a 
+existing problem in Bangladesh and also will align with SDG goals. I want to propose a Edu tech system that will help our students to 
+make better understanding about their learning. 
+
+The presentation will focus on the following things:
+i. Problem statement
+1. static textbook, no lab facilities/ visualization
+2. large classroom - teacher can't always clear misconceptions, provide personal support to individual student
+3. most scientific books, tutorials, and online resources are in english - hard to understand
+4. rural student deprived from high quality education
+5. generalize AI may generate irrelevant, unnecessary and sometimes false responses
+
+ii. Motivation
+1. microlab, visualization help students to understand concepts better
+2. questioning in community, discuss about topics, answer question and provide feedback
+help student to master a topic
+3. fine tuned chat generate appropriate responses
+4. topic wise quiz and exercise help to strengthen their knowledge
+5. bangla centens are easy to understand
+6. student in rural area will be benefited most
+
+iii. Related/available work
+1. test book - static, no visualization, no question-answering
+2. online course/tutorial - mostly in english 
+3. AI - generalize, can hallucinate, ignore local curriculam
+4. Question banks - Limited diagnosis of why a learner is wrong
+5. Standalone simulations - separate platform, separate context,
+disconnected from learner profile and curriculum
+6. online community - lack of locality based, class wise, curriculum alignment
+
+iv.  Proposed Solution & Technical Methodology
+1. Learn - Curriculum hub, media, exercise
+2. Visualize - Visualization activities, experiment
+3. Ask - Curriculum retrieval, bilingual answer generation, context aware, uncertainty handling
+4. Practice - Quiz, online exam
+5. Discuss - community support, teacher student interaction, reporting
+6. Track - profile maintain, progress dashboard, analytics
+7. Improve - level update, level based chatbot
+
+v. Impact on Society
+1. From Memorization Toward Understanding
+2. Teacher Capacity and Better Instructional Visibility
+3. Equity and Access Beyond the Classroom
+4. Language Inclusion 
+5. Scientific Curiosity and Collaborative Learning
+
+vi. SDG alignment
+SDG 4 and 10 alignment
+
+vii. Revenue plan
+1. Govt. funding
+2. NGO/development partner funding
+3. freemium
+
+now generate slide contents focusing and highlighting 
+these points
+
 
 
 
