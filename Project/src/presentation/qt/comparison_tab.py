@@ -90,10 +90,16 @@ SORT_TIME = "Execution time (fast → slow)"
 
 SORT_OPTIONS = [SORT_METRIC_DESC, SORT_METRIC_ASC, SORT_NAME, SORT_TIME]
 
+#: Sentinel metric key: rank by mean rank across all recorded metrics
+#: instead of by any single one. Lower is better, unlike every real metric.
+METRIC_OVERALL = "__overall__"
+METRIC_OVERALL_LABEL = "Overall (avg. rank)"
+
 #: Label used for the no-adaptation reference in charts and exports.
 BASELINE_LABEL = "Baseline"
 
 TABLE_COLUMNS = [
+    "Rank",
     "Method",
     "Accuracy",
     "Precision",
@@ -108,6 +114,7 @@ TABLE_COLUMNS = [
     "Baseline Acc",
     "Δ Accuracy",
     "Negative?",
+    "Avg. Rank",
 ]
 
 
@@ -174,6 +181,66 @@ def rows_from_entries(entries: list[ExperimentHistoryEntry]) -> list[MethodRow]:
 
 def _fmt(value: Optional[float], places: int = 4) -> str:
     return "—" if value is None else f"{value:.{places}f}"
+
+
+def competition_ranks(
+    values: list[Optional[float]], higher_is_better: bool = True
+) -> list[Optional[int]]:
+    """Standard competition ranking (1, 2, 2, 4) over *values*.
+
+    Ties share the better rank and consume the ones after it, which is what
+    "joint second" means in a results table. ``None`` inputs are unranked
+    (``None`` out) rather than ranked last: a method that never recorded a
+    metric has not lost on it, and sorting it to the bottom would silently
+    invent a comparison the data does not support.
+    """
+    scored = [(index, value) for index, value in enumerate(values) if value is not None]
+    scored.sort(key=lambda pair: pair[1], reverse=higher_is_better)
+
+    ranks: list[Optional[int]] = [None] * len(values)
+    previous_value: Optional[float] = None
+    previous_rank = 0
+    for position, (index, value) in enumerate(scored, start=1):
+        if previous_value is not None and value == previous_value:
+            ranks[index] = previous_rank
+        else:
+            ranks[index] = position
+            previous_rank = position
+            previous_value = value
+    return ranks
+
+
+def average_ranks(rows: list["MethodRow"]) -> dict[str, Optional[float]]:
+    """Mean competition rank per method across every recorded metric.
+
+    This is the aggregate the ranking view calls "Overall": a method that
+    wins on accuracy but loses on F1 should not be declared best outright,
+    and averaging its per-metric ranks is the usual way results tables
+    settle that. Each method is averaged only over the metrics it actually
+    has, so a missing AUC costs nothing rather than counting as a loss.
+    """
+    if len(rows) == 1:
+        row = rows[0]
+        scored = any(row.value(attribute) is not None for _label, attribute in METRICS)
+        return {row.method: 1.0 if scored else None}
+
+    per_metric: dict[str, list[Optional[int]]] = {}
+    for _label, attribute in METRICS:
+        values = [row.value(attribute) for row in rows]
+        # A metric only one method recorded is not a contest — ranking it
+        # first there would hand it a win nothing else could compete for and
+        # drag its average down for free.
+        if sum(value is not None for value in values) < 2:
+            continue
+        per_metric[attribute] = competition_ranks(values)
+
+    overall: dict[str, Optional[float]] = {}
+    for index, row in enumerate(rows):
+        collected = [
+            ranks[index] for ranks in per_metric.values() if ranks[index] is not None
+        ]
+        overall[row.method] = (sum(collected) / len(collected)) if collected else None
+    return overall
 
 
 class ComparisonExportDialog(QDialog):
@@ -249,6 +316,8 @@ class ComparisonTab(QWidget):
         self._palette = palette or DARK_PALETTE
         self._current_user: User | None = None
         self._rows: list[MethodRow] = []
+        #: method name -> mean rank across metrics, recomputed with _rows.
+        self._overall: dict[str, Optional[float]] = {}
         self._pairs: list[tuple[str, str]] = []
         self._loading = False
         self._annotation = None
@@ -303,6 +372,7 @@ class ComparisonTab(QWidget):
         self._metric_combo = QComboBox()
         for label, attribute in METRICS:
             self._metric_combo.addItem(label, attribute)
+        self._metric_combo.addItem(METRIC_OVERALL_LABEL, METRIC_OVERALL)
         self._metric_combo.setToolTip("Metric used for ranking and sorting")
         self._metric_combo.currentTextChanged.connect(self._render)
 
@@ -469,6 +539,7 @@ class ComparisonTab(QWidget):
         if self._catalog is None:
             self._pairs = []
             self._rows = []
+            self._overall = {}
             self._reload_method_list()
             self._render()
             return
@@ -524,6 +595,7 @@ class ComparisonTab(QWidget):
                 )
             except Exception:  # noqa: BLE001 - reported in the caption
                 self._rows = []
+        self._overall = average_ranks(self._rows)
         self._reload_method_list()
         self._render()
 
@@ -581,13 +653,42 @@ class ComparisonTab(QWidget):
                 )
             )
         else:
-            descending = order != SORT_METRIC_ASC
-            rows.sort(
-                key=lambda row: (row.value(attribute) is None, -(row.value(attribute) or 0.0))
-                if descending
-                else (row.value(attribute) is None, row.value(attribute) or 0.0)
-            )
+            best_first = order != SORT_METRIC_ASC
+            if attribute == METRIC_OVERALL:
+                # Average rank inverts the usual direction: 1.0 is the best
+                # a method can score, so "best first" means ascending here.
+                rows.sort(
+                    key=lambda row: (
+                        self._overall.get(row.method) is None,
+                        (self._overall.get(row.method) or 0.0) * (1 if best_first else -1),
+                    )
+                )
+            else:
+                rows.sort(
+                    key=lambda row: (row.value(attribute) is None, -(row.value(attribute) or 0.0))
+                    if best_first
+                    else (row.value(attribute) is None, row.value(attribute) or 0.0)
+                )
         return rows
+
+    def _metric_value(self, row: MethodRow) -> Optional[float]:
+        """The selected metric for *row*, or its average rank for Overall."""
+        attribute = self._metric_attribute()
+        if attribute == METRIC_OVERALL:
+            return self._overall.get(row.method)
+        return row.value(attribute)
+
+    def ranked_rows(self) -> list[tuple[Optional[int], MethodRow]]:
+        """Visible rows paired with their rank on the selected metric.
+
+        The rank is computed over the *visible* set, so unticking a method
+        renumbers the rest — the ranking answers "best of what I am looking
+        at", which is what the controls imply.
+        """
+        rows = self.visible_rows()
+        values = [self._metric_value(row) for row in rows]
+        higher_is_better = self._metric_attribute() != METRIC_OVERALL
+        return list(zip(competition_ranks(values, higher_is_better), rows))
 
     def _baseline_value(self, rows: list[MethodRow], attribute: str) -> Optional[float]:
         """The no-adaptation reference for *attribute*, if one was stored.
@@ -718,25 +819,46 @@ class ComparisonTab(QWidget):
         """Horizontal bars, best at the top, for the selected metric."""
         attribute = self._metric_attribute()
         label = self._metric_label()
-        scored = [row for row in rows if row.value(attribute) is not None]
-        if not scored:
+        overall = attribute == METRIC_OVERALL
+
+        ranked = [(rank, row) for rank, row in self.ranked_rows() if rank is not None]
+        if not ranked:
             self._placeholder(f"No stored {label} values for this pair.")
             return
 
-        scored.sort(key=lambda row: row.value(attribute) or 0.0)
-        names = [row.method for row in scored]
-        values = [row.value(attribute) or 0.0 for row in scored]
-        positions = np.arange(len(scored))
+        # Best at the top: barh draws upwards, so plot worst-first.
+        ranked.sort(key=lambda pair: pair[0], reverse=True)
+        names = [row.method for _rank, row in ranked]
+        values = [self._metric_value(row) or 0.0 for _rank, row in ranked]
+        positions = np.arange(len(ranked))
+        places = 2 if overall else 4
 
-        bars = axes.barh(positions, values, color=self._palette.get("metric_teal", "#0f9b8e"))
+        # The winner is coloured apart so the answer is readable at a glance.
+        best = min(rank for rank, _row in ranked)
+        colors = [
+            self._palette.get("success", "#14804a") if rank == best
+            else self._palette.get("metric_teal", "#0f9b8e")
+            for rank, _row in ranked
+        ]
+        bars = axes.barh(positions, values, color=colors)
         self._register_bars(
-            axes, bars, [f"#{len(scored) - i} {n} · {label} = {v:.4f}"
-                         for i, (n, v) in enumerate(zip(names, values))]
+            axes,
+            bars,
+            [f"#{rank}  {row.method} · {label} = {self._metric_value(row):.{places}f}"
+             for rank, row in ranked],
         )
-        for position, value in zip(positions, values):
-            axes.text(value + 0.01, position, f"{value:.4f}", va="center", fontsize=8)
 
-        if self._baseline_check.isChecked():
+        span = max(values) or 1.0
+        for position, value, (rank, _row) in zip(positions, values, ranked):
+            axes.text(
+                value + span * 0.015, position,
+                f"{value:.{places}f}   #{rank}",
+                va="center", fontsize=8,
+            )
+
+        if self._baseline_check.isChecked() and not overall:
+            # An average rank has no baseline to compare against — the
+            # baseline never competed in the ranking.
             baseline = self._baseline_value(rows, attribute)
             if baseline is not None:
                 axes.axvline(
@@ -750,10 +872,16 @@ class ComparisonTab(QWidget):
 
         axes.set_yticks(positions)
         axes.set_yticklabels(names, fontsize=8)
-        axes.set_xlim(0, 1.12)
-        axes.set_xlabel(label, fontsize=9)
+        axes.set_xlim(0, span * 1.28 if overall else 1.18)
+        axes.set_xlabel(
+            "Average rank across metrics (lower is better)" if overall else label, fontsize=9
+        )
         axes.set_title(
-            self._chart_title(f"Methods ranked by {label}"), fontsize=10, fontweight="bold"
+            self._chart_title(
+                "Methods ranked overall" if overall else f"Methods ranked by {label}"
+            ),
+            fontsize=10,
+            fontweight="bold",
         )
         axes.grid(axis="x", linestyle="--", alpha=0.3)
 
@@ -959,11 +1087,12 @@ class ComparisonTab(QWidget):
     # Table, caption, hover
     # ------------------------------------------------------------------
     def _populate_table(self) -> None:
-        rows = self.visible_rows() if self._rows else []
+        ranked = self.ranked_rows() if self._rows else []
         self._table.clearContents()
-        self._table.setRowCount(len(rows))
-        for index, row in enumerate(rows):
+        self._table.setRowCount(len(ranked))
+        for index, (rank, row) in enumerate(ranked):
             values = [
+                "—" if rank is None else f"#{rank}",
                 row.method,
                 _fmt(row.accuracy), _fmt(row.precision), _fmt(row.recall),
                 _fmt(row.f1_score), _fmt(row.auc),
@@ -974,6 +1103,7 @@ class ComparisonTab(QWidget):
                 _fmt(row.baseline_accuracy),
                 "—" if row.accuracy_delta is None else f"{row.accuracy_delta:+.4f}",
                 "Yes" if row.is_negative_transfer else ("—" if row.accuracy_delta is None else "No"),
+                _fmt(self._overall.get(row.method), 2),
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -999,6 +1129,21 @@ class ComparisonTab(QWidget):
             if not present
         ]
         parts = [f"{shown} of {total} stored method(s) shown, latest run of each"]
+
+        # The ranking is the headline finding, so state it in words rather
+        # than leaving the reader to decode the chart.
+        winners = [(rank, row) for rank, row in self.ranked_rows() if rank == 1]
+        if winners:
+            overall = self._metric_attribute() == METRIC_OVERALL
+            places = 2 if overall else 4
+            names = ", ".join(row.method for _rank, row in winners)
+            value = self._metric_value(winners[0][1])
+            descriptor = "avg. rank" if overall else self._metric_label()
+            parts.append(
+                f"best by {descriptor}: {names} ({value:.{places}f})"
+                + (" — tied" if len(winners) > 1 else "")
+            )
+
         losers = [row.method for row in rows if row.is_negative_transfer]
         if losers:
             parts.append("potential negative transfer: " + ", ".join(sorted(losers)))
@@ -1051,11 +1196,11 @@ class ComparisonTab(QWidget):
     # ------------------------------------------------------------------
     def table_rows(self) -> list[list[str]]:
         """The comparison table as plain strings — header row first."""
-        rows = self.visible_rows()
         out = [list(TABLE_COLUMNS)]
-        for row in rows:
+        for rank, row in self.ranked_rows():
             out.append(
                 [
+                    "—" if rank is None else f"#{rank}",
                     row.method,
                     _fmt(row.accuracy), _fmt(row.precision), _fmt(row.recall),
                     _fmt(row.f1_score), _fmt(row.auc),
@@ -1066,6 +1211,7 @@ class ComparisonTab(QWidget):
                     _fmt(row.baseline_accuracy),
                     "—" if row.accuracy_delta is None else f"{row.accuracy_delta:+.4f}",
                     "Yes" if row.is_negative_transfer else ("—" if row.accuracy_delta is None else "No"),
+                    _fmt(self._overall.get(row.method), 2),
                 ]
             )
         return out
