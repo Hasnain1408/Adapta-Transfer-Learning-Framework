@@ -200,9 +200,10 @@ class MEDAMethod(TransferLearningMethod):
         identity = np.eye(n_total)
 
         F = None
-        for _ in range(self._iterations):
+        for it in range(self._iterations):
             if control is not None:
                 control.checkpoint()
+                control.report_iteration(self.name, it + 1, self._iterations)
             mu = self._estimate_mu(xs_new, source_labels, xt_new, target_pseudo)
 
             e_marginal = np.vstack([np.full((ns, 1), 1.0 / ns), np.full((nt, 1), -1.0 / nt)])

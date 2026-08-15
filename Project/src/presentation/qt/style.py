@@ -693,6 +693,46 @@ QProgressBar#runProgressBar[paused="true"]::chunk {
     background-color: #FF0000;
 }
 
+/* ---------- Live processing status (above the results area) ----------
+   Stage chips are distinguished by colour and their leading glyph only.
+   Deliberately no font-weight switch on the active chip: re-weighting text
+   Qt has already measured shifts every chip after it sideways on each
+   stage change, which reads as the whole strip twitching. */
+QFrame#processingStrip {
+    background-color: $surface;
+    border: 1px solid $border;
+    border-radius: 8px;
+}
+QLabel#processingElapsed {
+    color: $text_secondary;
+    font-family: "DejaVu Sans Mono", "Menlo", monospace;
+    font-size: 11px;
+}
+QLabel#processingCaption {
+    color: $text_muted;
+    font-size: 11px;
+}
+QLabel#stageArrow {
+    color: $text_disabled;
+    font-size: 11px;
+    padding: 0px 6px;
+}
+QLabel#stageChip {
+    font-size: 11px;
+}
+QLabel#stageChip[stageState="pending"] {
+    color: $text_muted;
+}
+QLabel#stageChip[stageState="active"] {
+    color: $accent;
+}
+QLabel#stageChip[stageState="done"] {
+    color: $success;
+}
+QLabel#stageChip[stageState="skipped"] {
+    color: $text_disabled;
+}
+
 /* ---------- Separators ---------- */
 QFrame#divider {
     background-color: $border;

@@ -110,6 +110,7 @@ class JDAMethod(TransferLearningMethod):
         for it in range(iterations):
             if control is not None:
                 control.checkpoint()
+                control.report_iteration(self.name, it + 1, iterations)
             # Compute conditional matrix Mc (N)
             N = np.zeros((n, n))
             if y_tar_pseudo is not None and len(y_tar_pseudo) == nt:

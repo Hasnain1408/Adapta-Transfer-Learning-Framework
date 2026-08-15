@@ -43,6 +43,7 @@ from presentation.qt.visualization_tab import VisualizationTab
 from presentation.qt.dataset_summary_view import DatasetSummaryView
 from presentation.qt.history_tab import HistoryTab
 from presentation.qt.metric_card import MetricCard
+from presentation.qt.processing_status import ProcessingStatusStrip
 from presentation.qt.result_tables import BATCH_RESULTS_HEADERS
 from presentation.qt.title_bar import TitleBar
 
@@ -561,6 +562,12 @@ class MainWindowUIMixin:
         layout.addWidget(self._build_dataset_group())
         layout.addLayout(self._build_metrics_row())
         layout.addWidget(self._counts_label)
+        # Hidden until a run starts, so an idle window looks the way it
+        # always did and the strip's appearance is itself a signal. Placed
+        # directly above the results it is about, and in the content column
+        # rather than the sidebar because the sidebar has no spare height.
+        self._processing_strip = ProcessingStatusStrip()
+        layout.addWidget(self._processing_strip)
         layout.addWidget(self._build_results_stack(), 1)
         return content
 

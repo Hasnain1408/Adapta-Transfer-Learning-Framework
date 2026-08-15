@@ -4,8 +4,19 @@ from datetime import datetime
 from itertools import permutations
 from time import perf_counter
 
+from pathlib import Path
+
 from domain.interfaces import DatasetLoader, TransferLearningMethod
 from domain.mmd import classify_alignment, compute_mmd, percentage_change
+from domain.progress import (
+    STAGE_ADAPTING,
+    STAGE_ALIGNMENT,
+    STAGE_BASELINE,
+    STAGE_CLASSIFYING,
+    STAGE_FINALIZING,
+    STAGE_LOADING,
+    STAGE_PREPROCESSING,
+)
 from domain.models import (
     NEGATIVE_TRANSFER_TOLERANCE,
     BatchTransferLearningRequest,
@@ -31,6 +42,15 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 import numpy as np
+
+
+def _ignore_progress(*_args, **_kwargs) -> None:
+    """No-op stand-in when a run was started without a ``RunControl``.
+
+    Lets ``execute`` call ``report(...)`` unconditionally instead of
+    guarding every one of the seven call sites with ``if control is not
+    None`` — the checks were already the noisiest thing in the method.
+    """
 
 
 #: Request field -> the private attribute a method must expose to receive it.
@@ -87,6 +107,14 @@ class RunTransferLearningUseCase:
             supported = ", ".join(sorted(self._methods.keys()))
             raise ValueError(f"Unsupported method: {request.method_name}. Supported: {supported}")
 
+        # Reported before each step rather than after, so the panel names the
+        # thing currently blocking rather than the thing that just finished.
+        report = control.report if control is not None else _ignore_progress
+
+        report(
+            STAGE_LOADING,
+            f"{Path(request.source_path).name} → {Path(request.target_path).name}",
+        )
         source_dataset = self._loader.load(request.source_path, is_source=True)
         target_dataset = self._loader.load(request.target_path, is_source=False)
 
@@ -139,9 +167,11 @@ class RunTransferLearningUseCase:
                 return (X - mean) @ W
             return X
 
+        report(STAGE_PREPROCESSING, request.normalization)
         source_features = apply_normalization(source_dataset.features.copy(), request.normalization)
         target_features = apply_normalization(target_dataset.features.copy(), request.normalization)
-        
+
+        report(STAGE_PREPROCESSING, request.standardization)
         source_features = apply_standardization(source_features, request.standardization)
         target_features = apply_standardization(target_features, request.standardization)
 
@@ -151,6 +181,15 @@ class RunTransferLearningUseCase:
             if hasattr(method, attribute):
                 setattr(method, attribute, getattr(request, field))
 
+
+        # A one-shot method (CORAL, GFK, TCA) reports only this; the
+        # iterative ones overwrite the detail once per iteration from inside
+        # their own loop, via control.report_iteration.
+        report(
+            STAGE_ADAPTING,
+            f"{request.method_name} on "
+            f"{source_features.shape[0]}+{target_features.shape[0]} samples",
+        )
 
         # Timed on its own so the cost attributable to the *method* can be
         # read apart from the loading and classification around it.
@@ -184,6 +223,10 @@ class RunTransferLearningUseCase:
         negative_transfer = None
 
         if source_dataset.labels is not None and target_dataset.labels is not None:
+            report(
+                STAGE_CLASSIFYING,
+                f"{request.classifier} on {transformed_target.shape[0]} target samples",
+            )
             metrics, target_predictions = self._evaluate(
                 request.classifier,
                 transformed_source,
@@ -202,6 +245,7 @@ class RunTransferLearningUseCase:
             # Without this there is nothing to call negative transfer against.
             if control is not None:
                 control.checkpoint()
+            report(STAGE_BASELINE, f"{request.classifier} without adaptation")
             try:
                 baseline_metrics, _ = self._evaluate(
                     request.classifier,
@@ -227,10 +271,12 @@ class RunTransferLearningUseCase:
 
         if control is not None:
             control.checkpoint()
+        report(STAGE_ALIGNMENT, "MMD before vs. after adaptation")
         alignment = self._measure_alignment(
             source_features, target_features, transformed_source, transformed_target
         )
 
+        report(STAGE_FINALIZING, "assembling results")
         return TransferLearningResult(
             source_dataset=source_dataset,
             target_dataset=target_dataset,
@@ -377,13 +423,18 @@ class RunTransferLearningUseCase:
         batch_started = perf_counter()
         pairs: list[PairTransferLearningResult] = []
         cancelled = False
-        for source_path, target_path in permutations(request.file_paths, 2):
+        ordered_pairs = list(permutations(request.file_paths, 2))
+        for position, (source_path, target_path) in enumerate(ordered_pairs, start=1):
             if control is not None:
                 try:
                     control.checkpoint()
                 except RunCancelled:
                     cancelled = True
                     break
+                # Stamped on every update the pair's own execute() emits, so
+                # the panel can show "pair 3 of 12 — Adapting" without
+                # execute() needing to know it is part of a batch.
+                control.set_pair(position, len(ordered_pairs))
 
             pair_request = TransferLearningRequest(
                 method_name=request.method_name,
@@ -409,6 +460,9 @@ class RunTransferLearningUseCase:
                 pairs.append(
                     PairTransferLearningResult(source_path=source_path, target_path=target_path, error=str(exc))
                 )
+
+        if control is not None:
+            control.report(STAGE_FINALIZING, f"averaging {len(pairs)} pair(s)")
 
         metric_sets = [pair.result.metrics for pair in pairs if pair.result is not None and pair.result.metrics is not None]
         average_metrics = None

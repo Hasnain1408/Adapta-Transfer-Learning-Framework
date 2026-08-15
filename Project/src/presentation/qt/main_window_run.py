@@ -20,6 +20,7 @@ from domain.models import (
     TransferLearningRequest,
     TransferLearningResult,
 )
+from domain.progress import ProgressUpdate
 from domain.run_control import RunControl
 from presentation.qt import message_box
 from presentation.qt.duration import format_duration
@@ -81,6 +82,40 @@ class MainWindowRunMixin:
             if adaptation
             else f"completed in {total}"
         )
+
+    # ------------------------------------------------------------------
+    # Live processing status
+    # ------------------------------------------------------------------
+    def _on_progress(self, update: ProgressUpdate) -> None:
+        """Relay one worker-thread progress report to the UI.
+
+        Arrives on the UI thread: ``RunControl`` calls the worker's
+        ``progress.emit`` from the worker thread, and Qt queues the slot
+        because the worker object's affinity is this thread. Nothing here
+        may block — it runs between paint events.
+
+        A pause is not overwritten: ``_toggle_pause`` has already put
+        "Paused" on the status bar, and a report that was in flight when
+        the user hit pause would otherwise flip it straight back to
+        "Running".
+        """
+        self._processing_strip.apply(update)
+        if self._run_control is not None and self._run_control.is_paused:
+            return
+
+        self._set_status(update.headline, "warning")
+
+        # A batch knows how many pairs are left, so its bar can be honest
+        # about how far along it is; a single run genuinely does not know
+        # how long an eigendecomposition will take, and a fabricated
+        # percentage would be worse than the indeterminate sweep.
+        fraction = update.fraction if update.pair_total > 0 else None
+        if fraction is None:
+            if self._progress_bar.maximum() != 0:
+                self._progress_bar.setRange(0, 0)
+        else:
+            self._progress_bar.setRange(0, 100)
+            self._progress_bar.setValue(int(round(fraction * 100)))
 
     def _set_status(self, text: str, color_key: str) -> None:
         """Show a status message. ``color_key`` names a semantic palette entry
@@ -249,10 +284,19 @@ class MainWindowRunMixin:
         self._last_request = request
 
         self._set_running(True)
-        self._set_status("Running experiment…", "warning")
+        self._set_status("Starting…", "warning")
+        # In combined-file mode both halves come from the same file, so
+        # "a.mat → a.mat" would just look like a bug.
+        names = (
+            Path(source_path).name
+            if combined
+            else f"{Path(source_path).name} → {Path(target_path).name}"
+        )
+        self._processing_strip.start(f"{request.method_name}  ·  {names}")
 
         self._run_control = RunControl()
         self._worker = TransferLearningWorker(self._use_case, request, control=self._run_control)
+        self._worker.progress.connect(self._on_progress)
         self._worker.succeeded.connect(self._on_success)
         self._worker.failed.connect(self._on_error)
         self._worker.cancelled.connect(self._on_cancelled)
@@ -304,10 +348,12 @@ class MainWindowRunMixin:
 
         pair_count = len(file_paths) * (len(file_paths) - 1)
         self._set_running(True)
-        self._set_status(f"Running batch ({pair_count} pairs)…", "warning")
+        self._set_status(f"Starting batch ({pair_count} pairs)…", "warning")
+        self._processing_strip.start(f"{request.method_name}  ·  {pair_count} ordered pairs")
 
         self._run_control = RunControl()
         self._worker = BatchTransferLearningWorker(self._use_case, request, control=self._run_control)
+        self._worker.progress.connect(self._on_progress)
         self._worker.succeeded.connect(self._on_batch_success)
         self._worker.failed.connect(self._on_batch_error)
         self._worker.cancelled.connect(self._on_cancelled)
@@ -378,16 +424,24 @@ class MainWindowRunMixin:
             self._pause_button.setText("Pause")
             self._set_progress_bar_paused(False)
             self._progress_color_timer.start()
+            self._processing_strip.set_paused(False)
+            # The stage in flight is the truest thing to show on resume; it
+            # beats a generic "Running…" that the next report overwrites
+            # anyway, and a stage blocked in numpy may not report for a while.
+            last = self._run_control.last_update
             self._set_status(
-                "Running batch…" if self._batch_mode_check.isChecked() else "Running experiment…",
-                "warning",
+                last.headline if last is not None else "Running…", "warning"
             )
         else:
             self._run_control.pause()
             self._pause_button.setText("Resume")
             self._set_progress_bar_paused(True)
             self._progress_color_timer.stop()
-            self._set_status("Paused", "neutral")
+            self._processing_strip.set_paused(True)
+            last = self._run_control.last_update
+            self._set_status(
+                f"Paused — {last.stage}" if last is not None else "Paused", "neutral"
+            )
 
     def _cancel_run(self) -> None:
         if self._run_control is None:
@@ -397,6 +451,7 @@ class MainWindowRunMixin:
         # thread is still unwinding to its next checkpoint.
         self._cancel_button.setEnabled(False)
         self._pause_button.setEnabled(False)
+        self._processing_strip.set_paused(False)
         self._set_status("Cancelling…", "warning")
 
     def _on_cancelled(self) -> None:
@@ -405,12 +460,16 @@ class MainWindowRunMixin:
         with ``cancelled=True``, since a batch has partial results worth
         keeping. Nothing to record here: there's no run to show."""
         self._set_status("Cancelled", "neutral")
+        # Left on screen rather than hidden: the stage still marked active
+        # is the answer to "how far did it get before I stopped it?".
+        self._processing_strip.finish("Cancelled")
 
     def _on_success(self, result: TransferLearningResult) -> None:
         self._last_result = result
         self._last_run_kind = "single"
         elapsed = format_duration(result.duration_seconds)
         self._set_status(f"Completed in {elapsed}" if elapsed else "Completed", "success")
+        self._processing_strip.finish("Completed")
         self._export_button.setEnabled(True)
         self._export_action.setEnabled(True)
 
@@ -437,6 +496,7 @@ class MainWindowRunMixin:
 
     def _on_error(self, message: str) -> None:
         self._set_status("Failed", "danger")
+        self._processing_strip.finish("Failed")
         # Recorded before the modal opens: exec_() blocks until dismissed, and
         # a failed configuration is worth keeping either way.
         self._record_run(None, error_message=message)
@@ -466,6 +526,9 @@ class MainWindowRunMixin:
         if batch_elapsed:
             status += f" in {batch_elapsed}"
         self._set_status(status, status_key)
+        self._processing_strip.finish(
+            "Cancelled" if batch_result.cancelled else "Completed"
+        )
 
         # _export_pdf_report dispatches on _last_run_kind, so this is safe to
         # leave enabled — it now builds the batch report, not a stale
@@ -607,6 +670,9 @@ class MainWindowRunMixin:
         self._summary_view.clear()
         self._charts_widget.clear()
         self._visualization_tab.clear()
+        # The panel outlives a run on purpose (see _on_success), so a fresh
+        # workspace is the one place it has to be taken down explicitly.
+        self._processing_strip.clear()
 
         self._export_button.setEnabled(False)
         self._export_action.setEnabled(False)
@@ -632,6 +698,7 @@ class MainWindowRunMixin:
 
     def _on_batch_error(self, message: str) -> None:
         self._set_status("Batch Failed", "danger")
+        self._processing_strip.finish("Failed")
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Critical)
         box.setWindowTitle("Batch Run Failed")

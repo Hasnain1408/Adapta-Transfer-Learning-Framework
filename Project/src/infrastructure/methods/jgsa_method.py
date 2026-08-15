@@ -138,6 +138,7 @@ class JGSAMethod(TransferLearningMethod):
         for it in range(self._iterations):
             if control is not None:
                 control.checkpoint()
+                control.report_iteration(self.name, it + 1, self._iterations)
             N = self._conditional_distribution(source_labels, target_pseudo, ns, nt, classes)
             M = M0 + N
             m_norm = np.linalg.norm(M, ord="fro")

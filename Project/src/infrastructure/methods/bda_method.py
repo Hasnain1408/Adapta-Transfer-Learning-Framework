@@ -108,6 +108,7 @@ class BDAMethod(TransferLearningMethod):
         for it in range(self._iterations):
             if control is not None:
                 control.checkpoint()
+                control.report_iteration(self.name, it + 1, self._iterations)
             N_mat = np.zeros((n, n))
             if Y_tar_pseudo is not None and len(Y_tar_pseudo) == nt:
                 for c in classes:

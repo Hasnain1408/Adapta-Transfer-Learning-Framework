@@ -712,6 +712,11 @@ class ComparisonTab(QWidget):
     def _placeholder(self, message: str) -> None:
         self._figure.clear()
         self._hover_bars = []
+        # figure.clear() destroys whatever axes the annotation (if any) was
+        # attached to, so the artist is already gone -- keeping the stale
+        # reference makes the next hover event call .remove() on a dead
+        # artist, which raises NotImplementedError instead of doing nothing.
+        self._annotation = None
         axes = self._figure.add_subplot(111)
         axes.axis("off")
         axes.text(
@@ -748,6 +753,8 @@ class ComparisonTab(QWidget):
 
         self._figure.clear()
         self._hover_bars = []
+        # See _placeholder: the old annotation's axes no longer exists.
+        self._annotation = None
         view = self._view_combo.currentText()
         axes = self._figure.add_subplot(111)
 

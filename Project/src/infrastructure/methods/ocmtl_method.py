@@ -60,6 +60,7 @@ class OCMTLMethod(TransferLearningMethod):
         for it in range(self._max_iterations):
             if control is not None:
                 control.checkpoint()
+                control.report_iteration(self.name, it + 1, self._max_iterations)
             # Ass = temp_s * Ct (m x k)
             Ass = source @ Ct
             U_As, _, _ = np.linalg.svd(Ass, full_matrices=False)
