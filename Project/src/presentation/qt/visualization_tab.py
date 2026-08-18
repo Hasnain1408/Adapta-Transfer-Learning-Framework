@@ -30,7 +30,6 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -52,56 +51,40 @@ from matplotlib.backends.backend_qt5agg import (
 )
 from matplotlib.figure import Figure
 import numpy as np
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 
 from domain.models import TransferLearningResult
 from domain.overlap import OVERLAP_DISCLAIMER
-from presentation.qt.duration import format_duration
 from presentation.qt.report import REPORT_IMAGE_WIDTH
 from presentation.qt.style import DARK_PALETTE
+from presentation.qt.visualization_analysis import (
+    alignment_rows,
+    metadata_rows,
+    negative_transfer_warning,
+    overlap_rows,
+    performance_rows,
+)
+from presentation.qt.visualization_plots import (
+    COLOR_BY_BOTH,
+    COLOR_BY_CLASS,
+    COLOR_BY_DOMAIN,
+    plot_by_class,
+    plot_by_domain,
+)
+from presentation.qt.visualization_projection import (
+    MAX_PLOT_SAMPLES,
+    MAX_TSNE_SAMPLES,
+    PROJECTION_PCA,
+    PROJECTION_TSNE,
+    RANDOM_SEED,
+    TSNE_DEFAULT_ITERATIONS as _TSNE_DEFAULT_ITERATIONS,
+    TSNE_DEFAULT_PERPLEXITY as _TSNE_DEFAULT_PERPLEXITY,
+    project_pair,
+    subsample_indices as _subsample_indices,
+)
 
 STAGE_BEFORE = "Before Adaptation"
 STAGE_AFTER = "After Adaptation"
 STAGE_BOTH = "Compare Both"
-
-PROJECTION_PCA = "PCA"
-PROJECTION_TSNE = "t-SNE"
-
-COLOR_BY_DOMAIN = "Domain"
-COLOR_BY_CLASS = "Class"
-COLOR_BY_BOTH = "Domain + Class"
-
-#: Every projection is seeded with this so the same run always draws the
-#: same picture — a scatter that reshuffles on each redraw is not evidence.
-RANDOM_SEED = 42
-
-#: Scatter plots stop being readable long before they stop being drawable,
-#: and t-SNE is O(n log n) with a large constant. Past these caps a
-#: fixed-seed subsample is drawn; the indices depend only on (n, cap, seed),
-#: so Before and After keep showing the *same* samples.
-MAX_PLOT_SAMPLES = 3000
-MAX_TSNE_SAMPLES = 1500
-
-_TSNE_DEFAULT_PERPLEXITY = 30
-_TSNE_DEFAULT_ITERATIONS = 1000
-
-
-def _subsample_indices(count: int, cap: int) -> np.ndarray:
-    """Deterministic row indices, so Before and After plot the same samples."""
-    if count <= cap:
-        return np.arange(count)
-    rng = np.random.default_rng(RANDOM_SEED)
-    return np.sort(rng.choice(count, size=cap, replace=False))
-
-
-def _as_2d(matrix: np.ndarray) -> np.ndarray:
-    """Widen a 1-column feature matrix so a 2-component projection is defined."""
-    if matrix.ndim == 1:
-        matrix = matrix.reshape(-1, 1)
-    if matrix.shape[1] == 1:
-        return np.column_stack([matrix[:, 0], np.zeros(matrix.shape[0])])
-    return matrix
 
 
 class VisualizationTab(QWidget):
@@ -497,7 +480,11 @@ class VisualizationTab(QWidget):
         return self._projection_combo.currentText() == PROJECTION_TSNE
 
     def _project(self, stage: str) -> tuple[np.ndarray, np.ndarray] | None:
-        """Project one stage's features to 2D, memoised per configuration."""
+        """Project one stage's features to 2D, memoised per configuration.
+
+        The maths itself lives in ``visualization_projection.project_pair``;
+        this only supplies the live control values and owns the cache.
+        """
         projection = self._projection_combo.currentText()
         key = (stage, projection, self._perplexity_input.value(), self._iterations_input.value())
         if key in self._projection_cache:
@@ -506,42 +493,17 @@ class VisualizationTab(QWidget):
         matrices = self._stage_matrices(stage)
         if matrices is None:
             return None
-        source, target = (_as_2d(np.asarray(m, dtype=np.float64)) for m in matrices)
-        src_idx, tgt_idx = self._plot_indices(source.shape[0], target.shape[0])
-        source, target = source[src_idx], target[tgt_idx]
 
-        # Fitted on both domains at once: separate fits would put the two
-        # domains in different coordinate systems, and the whole point is to
-        # see where they sit relative to each other.
-        combined = np.vstack([source, target])
-        if projection == PROJECTION_TSNE:
-            coords = self._run_tsne(combined)
-        else:
-            coords = PCA(n_components=2, random_state=RANDOM_SEED).fit_transform(combined)
-
-        split = source.shape[0]
-        projected = (coords[:split], coords[split:])
+        projected = project_pair(
+            matrices[0],
+            matrices[1],
+            projection=projection,
+            perplexity=self._perplexity_input.value(),
+            iterations=self._iterations_input.value(),
+            cap=MAX_TSNE_SAMPLES if self._is_tsne() else MAX_PLOT_SAMPLES,
+        )
         self._projection_cache[key] = projected
         return projected
-
-    def _run_tsne(self, combined: np.ndarray) -> np.ndarray:
-        # sklearn requires perplexity < n_samples, and the usual guidance is
-        # to stay under (n - 1) / 3; a small run would otherwise raise.
-        n_samples = combined.shape[0]
-        perplexity = min(self._perplexity_input.value(), max(2.0, (n_samples - 1) / 3.0))
-        kwargs = dict(
-            n_components=2,
-            perplexity=perplexity,
-            random_state=RANDOM_SEED,
-            init="pca",
-            learning_rate="auto",
-        )
-        iterations = self._iterations_input.value()
-        try:
-            return TSNE(max_iter=iterations, **kwargs).fit_transform(combined)
-        except TypeError:
-            # sklearn < 1.5 spells it n_iter.
-            return TSNE(n_iter=iterations, **kwargs).fit_transform(combined)
 
     # ------------------------------------------------------------------
     # Rendering
@@ -625,11 +587,17 @@ class VisualizationTab(QWidget):
         )
 
         if use_classes:
-            self._plot_by_class(
-                axes, source_2d, target_2d, source_labels, target_labels, color_mode
+            plot_by_class(
+                axes,
+                source_2d,
+                target_2d,
+                source_labels,
+                target_labels,
+                color_mode,
+                self._palette,
             )
         else:
-            self._plot_by_domain(axes, source_2d, target_2d)
+            plot_by_domain(axes, source_2d, target_2d, self._palette)
 
         axis_names = ("PC1", "PC2") if projection == PROJECTION_PCA else ("t-SNE 1", "t-SNE 2")
         axes.set_xlabel(axis_names[0], fontsize=9)
@@ -654,68 +622,6 @@ class VisualizationTab(QWidget):
         if labels is None:
             return None
         return np.asarray(labels)[indices]
-
-    def _plot_by_domain(self, axes, source_2d: np.ndarray, target_2d: np.ndarray) -> None:
-        axes.scatter(
-            source_2d[:, 0],
-            source_2d[:, 1],
-            c=self._palette.get("accent", "#1e6fd9"),
-            alpha=0.6,
-            s=34,
-            edgecolors="none",
-            label=f"Source ({source_2d.shape[0]})",
-        )
-        axes.scatter(
-            target_2d[:, 0],
-            target_2d[:, 1],
-            c=self._palette.get("metric_amber", "#c77700"),
-            alpha=0.6,
-            s=34,
-            marker="^",
-            edgecolors="none",
-            label=f"Target ({target_2d.shape[0]})",
-        )
-
-    def _plot_by_class(
-        self, axes, source_2d, target_2d, source_labels, target_labels, color_mode: str
-    ) -> None:
-        """Colour by class, keeping the domains distinguishable by marker.
-
-        Shape always carries the domain (circle = source, triangle = target)
-        so that "are the class clusters preserved?" and "did the domains
-        merge?" stay separately readable in the same plot.
-        """
-        present = [labels for labels in (source_labels, target_labels) if labels is not None]
-        classes = np.unique(np.concatenate(present))
-        colormap = matplotlib.colormaps["tab10" if len(classes) <= 10 else "tab20"]
-
-        for position, class_value in enumerate(classes):
-            color = colormap(position % colormap.N)
-            for labels, coords, marker, domain in (
-                (source_labels, source_2d, "o", "Source"),
-                (target_labels, target_2d, "^", "Target"),
-            ):
-                if labels is None:
-                    continue
-                mask = labels == class_value
-                if not np.any(mask):
-                    continue
-                # "Domain + Class" additionally rings the target points, so
-                # the two domains stay apart even when printed in greyscale.
-                edge = "none"
-                if color_mode == COLOR_BY_BOTH and domain == "Target":
-                    edge = self._palette.get("text", "#e6edf3")
-                axes.scatter(
-                    coords[mask, 0],
-                    coords[mask, 1],
-                    color=[color],
-                    marker=marker,
-                    alpha=0.7,
-                    s=34,
-                    linewidths=0.5,
-                    edgecolors=edge,
-                    label=f"{domain} · class {class_value} ({int(np.sum(mask))})",
-                )
 
     # ------------------------------------------------------------------
     # Hover
@@ -776,24 +682,14 @@ class VisualizationTab(QWidget):
     # Analysis panel
     # ------------------------------------------------------------------
     def _populate_analysis(self) -> None:
-        result = self._result
-        self._fill_form(self._alignment_form, self._alignment_rows())
-        self._fill_form(self._overlap_form, self._overlap_rows())
-        self._fill_form(self._performance_form, self._performance_rows())
+        self._fill_form(self._alignment_form, alignment_rows(self._result))
+        self._fill_form(self._overlap_form, overlap_rows(self._result))
+        self._fill_form(self._performance_form, performance_rows(self._result))
         self._fill_form(self._metadata_form, self._metadata_rows())
 
-        analysis = result.negative_transfer if result else None
-        if analysis is not None and analysis.is_negative_transfer:
-            self._warning_label.setText(
-                "⚠  Potential Negative Transfer\n"
-                f"Target accuracy fell {abs(analysis.accuracy_delta):.4f} "
-                f"({analysis.baseline.accuracy:.4f} → {analysis.adapted.accuracy:.4f}) "
-                "against the same classifier without adaptation. This method may be "
-                "hurting this domain pair."
-            )
-            self._warning_label.setVisible(True)
-        else:
-            self._warning_label.setVisible(False)
+        warning = negative_transfer_warning(self._result)
+        self._warning_label.setText(warning)
+        self._warning_label.setVisible(bool(warning))
 
     def _fill_form(self, form: QFormLayout, rows: list[tuple[str, str]]) -> None:
         while form.rowCount():
@@ -805,85 +701,14 @@ class VisualizationTab(QWidget):
             value.setWordWrap(True)
             form.addRow(label, value)
 
-    def _alignment_rows(self) -> list[tuple[str, str]]:
-        alignment = self._result.alignment if self._result else None
-        if alignment is None:
-            return [("Status", "MMD unavailable for this run.")]
-        return [
-            ("MMD Before", f"{alignment.mmd_before:.6f}"),
-            ("MMD After", f"{alignment.mmd_after:.6f}"),
-            ("Change", f"{alignment.change_percent:+.2f}%"),
-            ("Alignment Status", alignment.status),
-        ]
-
-    def _overlap_rows(self) -> list[tuple[str, str]]:
-        """Domain Overlap before/after plus the change, in percentage points."""
-        alignment = self._result.alignment if self._result else None
-        if alignment is None or alignment.overlap_before is None:
-            return [("Status", "Overlap unavailable for this run.")]
-
-        change = alignment.overlap_change_points
-        rows = [
-            ("Overlap Before", f"{alignment.overlap_before:.1f}%"),
-            ("Overlap After", f"{alignment.overlap_after:.1f}%"),
-        ]
-        if change is not None:
-            # "pp" spelled out: a change from 60% to 81% is +21 points, and
-            # writing it as "+21%" invites reading it as a 21% relative gain.
-            direction = "more overlap" if change > 0 else "less overlap"
-            rows.append(
-                (
-                    "Change",
-                    f"{change:+.1f} points"
-                    + (f"  ({direction})" if abs(change) >= 0.05 else "  (no change)"),
-                )
-            )
-        return rows
-
-    def _performance_rows(self) -> list[tuple[str, str]]:
-        analysis = self._result.negative_transfer if self._result else None
-        if analysis is None:
-            return [("Status", "No target labels — performance cannot be compared.")]
-        return [
-            (
-                "Target Accuracy",
-                f"{analysis.baseline.accuracy:.4f} → {analysis.adapted.accuracy:.4f} "
-                f"({analysis.accuracy_delta:+.4f})",
-            ),
-            (
-                "Target F1",
-                f"{analysis.baseline.f1_score:.4f} → {analysis.adapted.f1_score:.4f} "
-                f"({analysis.f1_delta:+.4f})",
-            ),
-            (
-                "Verdict",
-                "Potential negative transfer"
-                if analysis.is_negative_transfer
-                else "Adaptation did not reduce target accuracy",
-            ),
-        ]
-
     def _metadata_rows(self) -> list[tuple[str, str]]:
-        result = self._result
-        if result is None:
-            return []
-        original_dims = (
-            result.preprocessed_source.shape[1]
-            if result.preprocessed_source is not None
-            else result.source_dataset.features.shape[1]
+        """Bind the live control values to the pure row builder."""
+        return metadata_rows(
+            self._result,
+            method_name=self._method_name,
+            projection=self._projection_combo.currentText(),
+            stage=self._stage_combo.currentText(),
         )
-        return [
-            ("Source Samples", str(result.transformed_source.shape[0])),
-            ("Target Samples", str(result.transformed_target.shape[0])),
-            ("Original Dimensions", str(original_dims)),
-            ("Adapted Dimensions", str(result.transformed_target.shape[1])),
-            ("Projected Dimensions", "2"),
-            ("Method", self._method_name),
-            ("Projection", self._projection_combo.currentText()),
-            ("Stage", self._stage_combo.currentText()),
-            ("Execution Time", format_duration(result.duration_seconds) or "—"),
-            ("Adaptation Time", format_duration(result.adaptation_seconds) or "—"),
-        ]
 
     def _update_status(self) -> None:
         result = self._result
@@ -939,9 +764,9 @@ class VisualizationTab(QWidget):
             ("Stage", self._stage_combo.currentText()),
             ("Color by", self._color_combo.currentText()),
         ]
-        rows.extend(self._alignment_rows())
-        rows.extend(self._overlap_rows())
-        rows.extend(self._performance_rows())
+        rows.extend(alignment_rows(self._result))
+        rows.extend(overlap_rows(self._result))
+        rows.extend(performance_rows(self._result))
         return rows
 
 
