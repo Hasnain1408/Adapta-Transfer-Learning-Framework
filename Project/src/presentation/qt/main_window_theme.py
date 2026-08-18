@@ -30,6 +30,11 @@ class MainWindowThemeMixin:
         self._status_dot.setStyleSheet(f"color: {color};")
         self._status_label.setStyleSheet(f"color: {color}; font-weight: 600;")
 
+        landing = getattr(self, "_landing_page", None)
+        if landing is not None:
+            landing.set_palette(self._palette)
+            landing.set_theme_label(self._theme_toggle_button.text())
+
         self._charts_widget.set_palette(self._palette)
         self._visualization_tab.set_palette(self._palette)
         self._comparison_tab.set_palette(self._palette)
