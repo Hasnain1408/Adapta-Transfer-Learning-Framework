@@ -53,6 +53,25 @@ class DomainAlignment:
     status: str
     kernel: str = "rbf"
 
+    #: Domain Overlap: how much the two point clouds intermix, 0-100 (see
+    #: ``domain/overlap.py``). Optional because a method whose output space
+    #: makes the measure unavailable still produces a valid MMD reading,
+    #: and because rows persisted before this metric existed have no value
+    #: to report -- ``None`` renders as "—", never as 0%.
+    overlap_before: Optional[float] = None
+    overlap_after: Optional[float] = None
+
+    @property
+    def overlap_change_points(self) -> Optional[float]:
+        """After minus before, in percentage *points* — not a ratio.
+
+        ``None`` unless both readings exist, so a half-measured run cannot
+        render a change that was never computed.
+        """
+        if self.overlap_before is None or self.overlap_after is None:
+            return None
+        return self.overlap_after - self.overlap_before
+
 
 @dataclass(frozen=True)
 class NegativeTransferAnalysis:

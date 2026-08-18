@@ -386,6 +386,26 @@ QPushButton#dangerButton:disabled {
     border-color: $border;
     color: $text_disabled;
 }
+/* Quit the app. Deliberately quieter than #dangerButton at rest — it shares
+   the sidebar with Cancel, and two red outlines there would read as two ways
+   of stopping the same thing. It only takes on the danger colour on hover,
+   once the pointer is already committed to it. */
+QPushButton#exitButton {
+    background-color: transparent;
+    border: 1px solid $border_strong;
+    color: $text_muted;
+    font-weight: 600;
+}
+QPushButton#exitButton:hover {
+    background-color: $danger;
+    border-color: $danger;
+    color: #ffffff;
+}
+QPushButton#exitButton:pressed {
+    background-color: $danger;
+    border-color: $danger;
+    color: #ffffff;
+}
 QPushButton#linkButton {
     background-color: transparent;
     border: none;

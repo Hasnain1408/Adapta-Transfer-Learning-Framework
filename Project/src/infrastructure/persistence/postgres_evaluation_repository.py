@@ -28,10 +28,11 @@ class PostgresEvaluationRepository:
                 total_samples, correct_predictions, wrong_predictions,
                 auc, mmd_before, mmd_after, alignment_status,
                 execution_seconds, adaptation_seconds,
-                baseline_accuracy, baseline_f1
+                baseline_accuracy, baseline_f1,
+                overlap_before, overlap_after
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (experiment_id) DO UPDATE SET
                 accuracy            = EXCLUDED.accuracy,
                 "precision"         = EXCLUDED."precision",
@@ -47,7 +48,9 @@ class PostgresEvaluationRepository:
                 execution_seconds   = EXCLUDED.execution_seconds,
                 adaptation_seconds  = EXCLUDED.adaptation_seconds,
                 baseline_accuracy   = EXCLUDED.baseline_accuracy,
-                baseline_f1         = EXCLUDED.baseline_f1
+                baseline_f1         = EXCLUDED.baseline_f1,
+                overlap_before      = EXCLUDED.overlap_before,
+                overlap_after       = EXCLUDED.overlap_after
             RETURNING *
             """,
             (
@@ -67,6 +70,8 @@ class PostgresEvaluationRepository:
                 evaluation.adaptation_seconds,
                 evaluation.baseline_accuracy,
                 evaluation.baseline_f1,
+                evaluation.overlap_before,
+                evaluation.overlap_after,
             ),
         )
         assert row is not None

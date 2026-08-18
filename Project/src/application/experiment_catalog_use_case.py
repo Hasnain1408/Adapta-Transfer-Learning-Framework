@@ -202,6 +202,8 @@ class ExperimentCatalogUseCase:
                     auc=metrics.auc,
                     # Stored so the comparison charts can be rebuilt from the
                     # database alone, long after the in-memory result is gone.
+                    overlap_before=alignment.overlap_before if alignment else None,
+                    overlap_after=alignment.overlap_after if alignment else None,
                     mmd_before=alignment.mmd_before if alignment else None,
                     mmd_after=alignment.mmd_after if alignment else None,
                     alignment_status=alignment.status if alignment else None,

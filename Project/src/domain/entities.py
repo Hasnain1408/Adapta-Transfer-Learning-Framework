@@ -209,6 +209,8 @@ class EvaluationRecord:
     adaptation_seconds: float | None = None
     baseline_accuracy: float | None = None
     baseline_f1: float | None = None
+    overlap_before: float | None = None
+    overlap_after: float | None = None
     id: int | None = None
 
     @property
@@ -219,6 +221,17 @@ class EvaluationRecord:
         if abs(self.mmd_before) < 1e-12:
             return 0.0
         return (self.mmd_before - self.mmd_after) / self.mmd_before * 100.0
+
+    @property
+    def overlap_change_points(self) -> float | None:
+        """After minus before, in percentage *points*; None if either is missing.
+
+        Points rather than a ratio: overlap is already a percentage, so
+        40% -> 60% is "+20 points". See ``domain/overlap.py``.
+        """
+        if self.overlap_before is None or self.overlap_after is None:
+            return None
+        return self.overlap_after - self.overlap_before
 
     @property
     def accuracy_delta(self) -> float | None:

@@ -56,6 +56,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 from domain.models import TransferLearningResult
+from domain.overlap import OVERLAP_DISCLAIMER
 from presentation.qt.duration import format_duration
 from presentation.qt.report import REPORT_IMAGE_WIDTH
 from presentation.qt.style import DARK_PALETTE
@@ -295,6 +296,19 @@ class VisualizationTab(QWidget):
         self._alignment_form = QFormLayout()
         layout.addWidget(self._wrap_group("Domain Alignment (MMD)", self._alignment_form))
 
+        # Its own group directly under MMD: both describe the domain gap, but
+        # overlap is the one that answers what the scatter beside it *looks*
+        # like, so it reads best next to the plot rather than buried in the
+        # MMD table.
+        self._overlap_form = QFormLayout()
+        layout.addWidget(
+            self._wrap_group(
+                "Domain Overlap",
+                self._overlap_form,
+                note=OVERLAP_DISCLAIMER,
+            )
+        )
+
         self._performance_form = QFormLayout()
         layout.addWidget(self._wrap_group("Classification Performance", self._performance_form))
 
@@ -306,11 +320,24 @@ class VisualizationTab(QWidget):
         return scroll
 
     @staticmethod
-    def _wrap_group(title: str, form: QFormLayout) -> QGroupBox:
+    def _wrap_group(title: str, form: QFormLayout, note: str = "") -> QGroupBox:
         group = QGroupBox(title)
         form.setSpacing(6)
         form.setLabelAlignment(Qt.AlignLeft)
-        group.setLayout(form)
+        if not note:
+            group.setLayout(form)
+            return group
+
+        # A note turns the group into a column: the form, then the caption
+        # under it. Set on the group rather than left to the caller so the
+        # disclaimer can never be detached from the number it qualifies.
+        column = QVBoxLayout(group)
+        column.setSpacing(8)
+        column.addLayout(form)
+        caption = QLabel(note)
+        caption.setObjectName("captionLabel")
+        caption.setWordWrap(True)
+        column.addWidget(caption)
         return group
 
     # ------------------------------------------------------------------
@@ -751,6 +778,7 @@ class VisualizationTab(QWidget):
     def _populate_analysis(self) -> None:
         result = self._result
         self._fill_form(self._alignment_form, self._alignment_rows())
+        self._fill_form(self._overlap_form, self._overlap_rows())
         self._fill_form(self._performance_form, self._performance_rows())
         self._fill_form(self._metadata_form, self._metadata_rows())
 
@@ -787,6 +815,30 @@ class VisualizationTab(QWidget):
             ("Change", f"{alignment.change_percent:+.2f}%"),
             ("Alignment Status", alignment.status),
         ]
+
+    def _overlap_rows(self) -> list[tuple[str, str]]:
+        """Domain Overlap before/after plus the change, in percentage points."""
+        alignment = self._result.alignment if self._result else None
+        if alignment is None or alignment.overlap_before is None:
+            return [("Status", "Overlap unavailable for this run.")]
+
+        change = alignment.overlap_change_points
+        rows = [
+            ("Overlap Before", f"{alignment.overlap_before:.1f}%"),
+            ("Overlap After", f"{alignment.overlap_after:.1f}%"),
+        ]
+        if change is not None:
+            # "pp" spelled out: a change from 60% to 81% is +21 points, and
+            # writing it as "+21%" invites reading it as a 21% relative gain.
+            direction = "more overlap" if change > 0 else "less overlap"
+            rows.append(
+                (
+                    "Change",
+                    f"{change:+.1f} points"
+                    + (f"  ({direction})" if abs(change) >= 0.05 else "  (no change)"),
+                )
+            )
+        return rows
 
     def _performance_rows(self) -> list[tuple[str, str]]:
         analysis = self._result.negative_transfer if self._result else None
@@ -888,12 +940,14 @@ class VisualizationTab(QWidget):
             ("Color by", self._color_combo.currentText()),
         ]
         rows.extend(self._alignment_rows())
+        rows.extend(self._overlap_rows())
         rows.extend(self._performance_rows())
         return rows
 
 
 __all__ = [
     "VisualizationTab",
+    "OVERLAP_DISCLAIMER",
     "STAGE_BEFORE",
     "STAGE_AFTER",
     "STAGE_BOTH",

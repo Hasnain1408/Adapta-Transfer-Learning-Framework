@@ -170,6 +170,10 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS adaptation_seconds DOUBLE PRECISION",
     "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS baseline_accuracy  DOUBLE PRECISION",
     "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS baseline_f1        DOUBLE PRECISION",
+    # Domain Overlap indicator, added later still -- same nullable reasoning:
+    # every row above predates it and has no reading to report.
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS overlap_before     DOUBLE PRECISION",
+    "ALTER TABLE evaluations ADD COLUMN IF NOT EXISTS overlap_after      DOUBLE PRECISION",
     # ------------------------------------------------------------- indexes
     "CREATE INDEX IF NOT EXISTS idx_experiments_user   ON experiments(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_experiments_date   ON experiments(date DESC)",

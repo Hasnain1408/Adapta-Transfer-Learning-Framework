@@ -297,6 +297,14 @@ class MainWindowUIMixin:
             "ready for a fresh experiment. Saved experiment history is untouched."
         )
 
+        # Sits apart from Cancel (which stops a *run*) so the two reds don't
+        # compete: this one is styled neutral until hovered, because quitting
+        # is a deliberate act rather than an escape hatch from a bad run.
+        self._exit_button = QPushButton("⏻  Exit System")
+        self._exit_button.setObjectName("exitButton")
+        self._exit_button.setCursor(Qt.PointingHandCursor)
+        self._exit_button.setToolTip("Close Adapta and quit the application (Ctrl+Q)")
+
         self._theme_toggle_button = QPushButton("☀  Light")
         self._theme_toggle_button.setObjectName("themeToggleButton")
         self._theme_toggle_button.setCursor(Qt.PointingHandCursor)
@@ -425,7 +433,7 @@ class MainWindowUIMixin:
         self._export_action = QAction("&Export Report…", self)
         self._export_action.setShortcut(QKeySequence("Ctrl+R"))
         self._export_action.setEnabled(False)
-        self._quit_action = QAction("&Quit", self)
+        self._quit_action = QAction("E&xit System", self)
         self._quit_action.setShortcut(QKeySequence("Ctrl+Q"))
         self._run_action = QAction("&Run Experiment", self)
         self._run_action.setShortcut(QKeySequence("Ctrl+E"))
@@ -690,6 +698,10 @@ class MainWindowUIMixin:
 
         row.addWidget(self._export_button)
         row.addWidget(self._clear_button)
+        # Last, and spaced away from the rest, so it is never the button the
+        # hand lands on when reaching for Clear.
+        row.addSpacing(6)
+        row.addWidget(self._exit_button)
         return row
 
     def _build_metrics_row(self) -> QHBoxLayout:
@@ -865,13 +877,16 @@ class MainWindowUIMixin:
         self._export_button.clicked.connect(self._export_pdf_report)
         self._batch_export_button.clicked.connect(self._export_batch_report)
         self._clear_button.clicked.connect(self._clear_all)
+        self._exit_button.clicked.connect(self._exit_application)
 
         self._open_source_action.triggered.connect(self._pick_source)
         self._open_target_action.triggered.connect(self._pick_target)
         self._swap_datasets_action.triggered.connect(self._swap_datasets)
         self._export_action.triggered.connect(self._export_pdf_report)
         self._run_action.triggered.connect(self._run_transfer_learning)
-        self._quit_action.triggered.connect(self.close)
+        # Same path as the sidebar's Exit System button, so Ctrl+Q confirms
+        # and shuts down identically instead of merely hiding the window.
+        self._quit_action.triggered.connect(self._exit_application)
         self._about_action.triggered.connect(self._show_about)
 
         self._learning_materials_action.triggered.connect(lambda: self._open_learning_materials(0))

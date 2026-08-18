@@ -111,6 +111,9 @@ TABLE_COLUMNS = [
     "MMD After",
     "MMD Change",
     "Alignment",
+    "Overlap Before",
+    "Overlap After",
+    "Overlap Δ (pts)",
     "Exec Time",
     "Baseline Acc",
     "Δ Accuracy",
@@ -136,6 +139,9 @@ class MethodRow:
     mmd_before: Optional[float]
     mmd_after: Optional[float]
     mmd_change: Optional[float]
+    overlap_before: Optional[float]
+    overlap_after: Optional[float]
+    overlap_change: Optional[float]
     alignment_status: Optional[str]
     execution_seconds: Optional[float]
     baseline_accuracy: Optional[float]
@@ -169,6 +175,9 @@ def rows_from_entries(entries: list[ExperimentHistoryEntry]) -> list[MethodRow]:
                 mmd_before=evaluation.mmd_before,
                 mmd_after=evaluation.mmd_after,
                 mmd_change=evaluation.mmd_change_percent,
+                overlap_before=evaluation.overlap_before,
+                overlap_after=evaluation.overlap_after,
+                overlap_change=evaluation.overlap_change_points,
                 alignment_status=evaluation.alignment_status,
                 execution_seconds=evaluation.execution_seconds,
                 baseline_accuracy=evaluation.baseline_accuracy,
@@ -1112,6 +1121,9 @@ class ComparisonTab(QWidget):
                 _fmt(row.mmd_before, 6), _fmt(row.mmd_after, 6),
                 "—" if row.mmd_change is None else f"{row.mmd_change:+.2f}%",
                 row.alignment_status or "—",
+                "—" if row.overlap_before is None else f"{row.overlap_before:.1f}%",
+                "—" if row.overlap_after is None else f"{row.overlap_after:.1f}%",
+                "—" if row.overlap_change is None else f"{row.overlap_change:+.1f}",
                 format_duration(row.execution_seconds) or "—",
                 _fmt(row.baseline_accuracy),
                 "—" if row.accuracy_delta is None else f"{row.accuracy_delta:+.4f}",
@@ -1136,6 +1148,7 @@ class ComparisonTab(QWidget):
             for name, present in (
                 ("AUC", any(r.auc is not None for r in rows)),
                 ("MMD", any(r.mmd_before is not None for r in rows)),
+                ("domain overlap", any(r.overlap_before is not None for r in rows)),
                 ("execution time", any(r.execution_seconds is not None for r in rows)),
                 ("baseline", any(r.baseline_accuracy is not None for r in rows)),
             )
@@ -1220,6 +1233,9 @@ class ComparisonTab(QWidget):
                     _fmt(row.mmd_before, 6), _fmt(row.mmd_after, 6),
                     "—" if row.mmd_change is None else f"{row.mmd_change:+.2f}%",
                     row.alignment_status or "—",
+                    "—" if row.overlap_before is None else f"{row.overlap_before:.1f}%",
+                    "—" if row.overlap_after is None else f"{row.overlap_after:.1f}%",
+                    "—" if row.overlap_change is None else f"{row.overlap_change:+.1f}",
                     format_duration(row.execution_seconds) or "—",
                     _fmt(row.baseline_accuracy),
                     "—" if row.accuracy_delta is None else f"{row.accuracy_delta:+.4f}",

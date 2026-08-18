@@ -22,7 +22,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QMainWindow
+from PyQt5.QtWidgets import QApplication, QMainWindow
 
 from application.authentication_use_case import AuthenticationUseCase
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
@@ -35,6 +35,7 @@ from domain.models import (
     TransferLearningResult,
 )
 from domain.run_control import RunControl
+from presentation.qt import message_box
 from presentation.qt.experiment_detail_view import ExperimentDetailView
 from presentation.qt.main_window_report import MainWindowReportMixin
 from presentation.qt.main_window_results import MainWindowResultsMixin
@@ -124,16 +125,73 @@ class MainWindow(
         if event.type() == QEvent.WindowStateChange:
             self._title_bar.refresh_maximize_glyph()
 
-    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+    def _stop_background_work(self) -> None:
+        """Bring any in-flight run to a halt before the window goes away.
+
+        Shared by ``closeEvent`` and :meth:`_exit_application`, which reach
+        shutdown by different routes — the window manager's close button
+        versus the app's own Exit System button — but must leave the same
+        state behind: no QThread still touching objects Qt is about to
+        destroy.
+        """
         worker = self._worker
-        if worker is not None and worker.isRunning():
+        try:
+            still_running = worker is not None and worker.isRunning()
+        except RuntimeError:
+            # The QThread's C++ side is already gone (deleteLater ran);
+            # nothing left to stop.
+            return
+        if still_running:
             # A paused run is blocked indefinitely on its checkpoint, so it
             # has to be cancelled before waiting on it, or this would hang
             # until the timeout with the thread still alive afterwards.
             if self._run_control is not None:
                 self._run_control.cancel()
             worker.wait(3000)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self._stop_background_work()
         super().closeEvent(event)
+
+    def _exit_application(self) -> None:
+        """Quit the whole app: the sidebar's Exit System button and Ctrl+Q.
+
+        Not simply ``self.close()``. Closing only this window leaves the app
+        running whenever another top-level window is open — the full-screen
+        results viewer and the Learning Materials dialog are both parented to
+        ``None`` — so the process would linger with no way back to it. This
+        ends the event loop outright, which lets ``main()`` run its
+        ``finally`` and close the database connection.
+        """
+        running = self._is_worker_busy()
+        if running:
+            headline = f"{self._busy_description()} is still running."
+            detail = (
+                "Exiting now stops it partway and discards its results. "
+                "Anything already saved to history is unaffected."
+            )
+        else:
+            headline = "Exit Adapta?"
+            detail = (
+                "Results on screen will be discarded. Experiments already "
+                "recorded in history are kept."
+            )
+        if not message_box.confirm(
+            self,
+            "Exit System",
+            headline,
+            detail,
+            confirm_label="Exit",
+            destructive=running,
+        ):
+            return
+
+        self._stop_background_work()
+        application = QApplication.instance()
+        if application is not None:
+            application.quit()
+        else:  # pragma: no cover - only reachable outside a running app
+            self.close()
 
 
 __all__ = ["MainWindow"]

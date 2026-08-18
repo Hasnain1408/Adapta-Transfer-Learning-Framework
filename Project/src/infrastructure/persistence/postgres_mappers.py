@@ -103,6 +103,8 @@ def _to_evaluation(row: dict[str, Any]) -> EvaluationRecord:
         # .get(), not "or": these are legitimately NULL on older rows, and
         # "or" would turn a real stored 0.0 into None.
         auc=row.get("auc"),
+        overlap_before=row.get("overlap_before"),
+        overlap_after=row.get("overlap_after"),
         mmd_before=row.get("mmd_before"),
         mmd_after=row.get("mmd_after"),
         alignment_status=row.get("alignment_status"),

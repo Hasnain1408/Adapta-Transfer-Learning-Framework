@@ -28,6 +28,7 @@ from pathlib import Path
 
 from domain.entities import DatasetRecord, EvaluationRecord, ExperimentHistoryEntry
 from domain.models import BatchTransferLearningResult, TransferLearningResult
+from domain.overlap import OVERLAP_DISCLAIMER
 from presentation.qt.duration import format_duration
 from presentation.qt.export_options_dialog import (
     SECTION_ALIGNMENT,
@@ -73,6 +74,7 @@ _HEAD = (
     "h1 { font-size: 16pt; margin: 0 0 2px 0; }"
     "h2 { font-size: 12pt; margin: 22px 0 6px 0; border-bottom: 1px solid #c3ccd6;"
     " padding-bottom: 3px; }"
+    "h3 { font-size: 10.5pt; margin: 14px 0 4px 0; color: #33414f; }"
     "p.meta { color: #5b6b7c; font-size: 9pt; margin: 0 0 4px 0; }"
     "table { border-collapse: collapse; width: 100%; }"
     "th, td { border: 1px solid #dde2e8; padding: 5px 7px; text-align: left; }"
@@ -185,6 +187,23 @@ def _alignment_tables(result: TransferLearningResult, palette: dict[str, str]) -
             "preprocessed input space (before) and the method's output space "
             "(after); a positive change means the domains moved closer.</p>"
         )
+
+        if alignment.overlap_before is not None and alignment.overlap_after is not None:
+            change = alignment.overlap_change_points or 0.0
+            parts.append("<h3>Domain Overlap</h3>")
+            parts.append("<table width='100%'>")
+            parts.append(
+                "<tr><th>Overlap Before</th><th>Overlap After</th><th>Change</th></tr>"
+            )
+            parts.append(
+                f"<tr><td class='num'>{alignment.overlap_before:.1f}%</td>"
+                f"<td class='num'>{alignment.overlap_after:.1f}%</td>"
+                f"<td class='num'>{change:+.1f} points</td></tr></table>"
+            )
+            # The same caveat the Feature Space panel carries. A report is
+            # read away from the app, often by someone who never saw the
+            # scatter plot, so the qualifier travels with the number.
+            parts.append(f"<p class='meta'>{escape(OVERLAP_DISCLAIMER)}</p>")
 
     if analysis is not None:
         parts.append("<table width='100%' style='margin-top:8px'>")
