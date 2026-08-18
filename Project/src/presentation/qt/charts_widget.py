@@ -26,6 +26,7 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import confusion_matrix
 
 from domain.models import TransferLearningResult
+from presentation.qt.report import REPORT_IMAGE_WIDTH
 from presentation.qt.style import DARK_PALETTE
 
 
@@ -342,7 +343,11 @@ class AnalyticsChartsWidget(QWidget):
             )
 
     def render_to_base64_html(self) -> str:
-        """Render the current figure to a base64 encoded PNG for HTML/PDF reports."""
+        """Render the current figure to a base64 encoded PNG for HTML/PDF reports.
+
+        See ``REPORT_IMAGE_WIDTH`` for why this is a ``width`` attribute
+        rather than a CSS style.
+        """
         if self._last_result is None:
             return ""
 
@@ -350,4 +355,8 @@ class AnalyticsChartsWidget(QWidget):
         self._figure.savefig(buf, format="png", bbox_inches="tight", dpi=150)
         buf.seek(0)
         encoded = base64.b64encode(buf.read()).decode("ascii")
-        return f"<img src='data:image/png;base64,{encoded}' style='width:100%; max-width:800px; margin-top:10px;' />"
+        return (
+            f"<img src='data:image/png;base64,{encoded}' "
+            f"width='{REPORT_IMAGE_WIDTH}' style='margin-top:10px;' />"
+        )
+

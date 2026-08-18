@@ -202,6 +202,12 @@ class MainWindowReportMixin:
             self._export_single_report()
 
     def _export_single_report(self) -> None:
+        # Rendering a report is synchronous work on the UI thread (HTML
+        # build + QPrinter paint); stacking it on top of a running worker's
+        # CPU-bound computation is exactly what makes the whole app feel
+        # hung, so it waits its turn like every other heavy action here.
+        if self._reject_if_busy("exporting a report"):
+            return
         result = self._last_result
         if result is None:
             return
@@ -226,6 +232,8 @@ class MainWindowReportMixin:
         self._write_pdf_report(html, "Transfer_Learning_Report.pdf")
 
     def _export_batch_report(self) -> None:
+        if self._reject_if_busy("exporting a report"):
+            return
         batch_result = self._last_batch_result
         if batch_result is None:
             return
@@ -247,6 +255,8 @@ class MainWindowReportMixin:
         """Export one batch pair's own report — used by ``PairDetailView``'s
         Export Report button, which already has its own charts widget to
         render *chart_html* from."""
+        if self._reject_if_busy("exporting a report"):
+            return
         if pair.result is None:
             message_box.warning(
                 self, "Nothing to Export", "This pair failed and produced no result."
@@ -280,6 +290,8 @@ class MainWindowReportMixin:
     ) -> None:
         """Export a report rebuilt from a persisted experiment row — no
         per-sample predictions or charts, since neither is stored."""
+        if self._reject_if_busy("exporting a report"):
+            return
         sections = self._pick_sections(
             visualizations_available=False,
             unavailable_reason=(

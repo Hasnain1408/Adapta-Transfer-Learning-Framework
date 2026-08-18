@@ -38,6 +38,35 @@ from presentation.qt.export_options_dialog import (
     SECTION_VISUALIZATIONS,
 )
 
+#: Safe pixel width for a chart ``<img>`` embedded in the printed report.
+#: Measured against the actual print geometry ``_write_pdf_report`` uses in
+#: ``main_window_report.py`` (A4, 15mm margins on every side): that leaves a
+#: 509pt-wide printable column, verified with
+#: ``QPrinter().pageRect(QPrinter.Point)``. 480 leaves a small buffer below
+#: that so a Letter-sized default (slightly wider) is covered too.
+#:
+#: This has to be a plain HTML ``width`` attribute, not a CSS percentage —
+#: Qt's ``QTextDocument`` (what actually prints the report) does not scale
+#: ``<img>`` to a percentage or ``max-width`` style; it renders at native
+#: pixel size, which is far wider than a printed page and gets clipped at
+#: the right margin. Height is left for the caller to omit so Qt scales it
+#: proportionally instead of guessing an aspect ratio.
+REPORT_IMAGE_WIDTH = 480
+
+#: How many data columns (beyond the anchor pair below) a printed table
+#: holds before headers like "Baseline Acc" start wrapping mid-word
+#: ("Baselin/e Acc") or losing their one-line layout. Tuned empirically
+#: against the actual print geometry (A4, 15mm margins, 9pt table font,
+#: see ``REPORT_IMAGE_WIDTH``): 7 data columns still wrapped headers like
+#: "Precision" mid-word, 5 does not. The Comparison report's "Exact Values"
+#: table can carry up to 16 columns (see ``comparison_tab.TABLE_COLUMNS``)
+#: — CSV export has no width limit and uses the same rows unsplit, so this
+#: only reshapes the PDF's copy.
+_MAX_TABLE_DATA_COLUMNS = 5
+#: Leading columns repeated in every chunk of a split table (here: Rank,
+#: Method) so a reader can still tell which row is which after the split.
+_TABLE_ANCHOR_COLUMNS = 2
+
 _HEAD = (
     "<html><head><meta charset='utf-8'><style>"
     "body { font-family: 'Helvetica', Arial, sans-serif; color: #1a2229; font-size: 10pt; }"
@@ -371,6 +400,38 @@ def build_batch_report_html(
     return "".join(parts)
 
 
+def _chunk_wide_table(
+    header: list[str], body: list[list[str]]
+) -> list[tuple[list[str], list[list[str]]]]:
+    """Split a many-column table into page-width-friendly chunks.
+
+    A table wider than the printable page doesn't reflow in Qt's rich-text
+    renderer the way a browser would — the columns just get squeezed until
+    header text wraps letter by letter. Splitting into several narrower
+    tables, each repeating the first ``_TABLE_ANCHOR_COLUMNS`` columns so a
+    reader can still tell which row is which, keeps every header on one
+    line. A table that already fits is returned unchanged as a single chunk.
+    """
+    anchors = header[:_TABLE_ANCHOR_COLUMNS]
+    rest_count = len(header) - len(anchors)
+    if rest_count <= _MAX_TABLE_DATA_COLUMNS:
+        return [(header, body)]
+
+    chunks: list[tuple[list[str], list[list[str]]]] = []
+    for start in range(0, rest_count, _MAX_TABLE_DATA_COLUMNS):
+        width = min(_MAX_TABLE_DATA_COLUMNS, rest_count - start)
+        indices = list(range(_TABLE_ANCHOR_COLUMNS)) + [
+            _TABLE_ANCHOR_COLUMNS + start + offset for offset in range(width)
+        ]
+        chunks.append(
+            (
+                [header[i] for i in indices],
+                [[row[i] for i in indices] for row in body],
+            )
+        )
+    return chunks
+
+
 def build_comparison_report_html(
     context: dict[str, str],
     chart_sections: list[tuple[str, str]],
@@ -401,19 +462,21 @@ def build_comparison_report_html(
         parts.append(chart_html)
 
     if include_table and len(table_rows) > 1:
-        parts.append("<h2>Exact Values</h2><table width='100%'>")
+        parts.append("<h2>Exact Values</h2>")
         header, *body = table_rows
-        parts.append(
-            "<tr>" + "".join(f"<th>{escape(str(cell))}</th>" for cell in header) + "</tr>"
-        )
-        for row in body:
-            cells = "".join(
-                f"<td class='num'>{escape(str(cell))}</td>" if index else
-                f"<td>{escape(str(cell))}</td>"
-                for index, cell in enumerate(row)
+        for chunk_header, chunk_body in _chunk_wide_table(header, body):
+            parts.append("<table width='100%' style='margin-top:8px'>")
+            parts.append(
+                "<tr>" + "".join(f"<th>{escape(str(cell))}</th>" for cell in chunk_header) + "</tr>"
             )
-            parts.append(f"<tr>{cells}</tr>")
-        parts.append("</table>")
+            for row in chunk_body:
+                cells = "".join(
+                    f"<td class='num'>{escape(str(cell))}</td>" if index else
+                    f"<td>{escape(str(cell))}</td>"
+                    for index, cell in enumerate(row)
+                )
+                parts.append(f"<tr>{cells}</tr>")
+            parts.append("</table>")
         parts.append(
             "<p class='meta'>An em-dash means the value was never recorded for "
             "that run, not that it was zero.</p>"

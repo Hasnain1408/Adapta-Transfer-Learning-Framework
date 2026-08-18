@@ -53,7 +53,7 @@ from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from domain.entities import ExperimentHistoryEntry, User
 from presentation.qt import message_box
 from presentation.qt.duration import format_duration
-from presentation.qt.report import build_comparison_report_html
+from presentation.qt.report import REPORT_IMAGE_WIDTH, build_comparison_report_html
 from presentation.qt.style import build_style_sheet
 from presentation.qt.title_bar import install_title_bar, install_title_bar_on_grid
 from presentation.qt.style import DARK_PALETTE
@@ -1235,7 +1235,13 @@ class ComparisonTab(QWidget):
         }
 
     def render_to_base64_html(self) -> str:
-        """Current chart as an inline PNG for the PDF report."""
+        """Current chart as an inline PNG for the PDF report.
+
+        See ``REPORT_IMAGE_WIDTH`` for why this is a ``width`` attribute
+        rather than a CSS style — Qt's print engine ignores percentage/
+        max-width styling on ``<img>`` and renders it at native pixel size,
+        which is wider than a printed page and gets clipped at the margin.
+        """
         import base64
         import io
 
@@ -1247,7 +1253,7 @@ class ComparisonTab(QWidget):
         encoded = base64.b64encode(buffer.read()).decode("ascii")
         return (
             f"<img src='data:image/png;base64,{encoded}' "
-            "style='width:100%; max-width:820px; margin-top:10px;' />"
+            f"width='{REPORT_IMAGE_WIDTH}' style='margin-top:10px;' />"
         )
 
     def available_views(self) -> list[str]:

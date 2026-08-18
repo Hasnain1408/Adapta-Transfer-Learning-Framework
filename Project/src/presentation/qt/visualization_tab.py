@@ -57,6 +57,7 @@ from sklearn.manifold import TSNE
 
 from domain.models import TransferLearningResult
 from presentation.qt.duration import format_duration
+from presentation.qt.report import REPORT_IMAGE_WIDTH
 from presentation.qt.style import DARK_PALETTE
 
 STAGE_BEFORE = "Before Adaptation"
@@ -854,7 +855,11 @@ class VisualizationTab(QWidget):
     # Export
     # ------------------------------------------------------------------
     def render_to_base64_html(self) -> str:
-        """The current scatter plot as an inline PNG for the PDF report."""
+        """The current scatter plot as an inline PNG for the PDF report.
+
+        See ``REPORT_IMAGE_WIDTH`` for why this is a ``width`` attribute
+        rather than a CSS style.
+        """
         if self._result is None:
             return ""
         buffer = io.BytesIO()
@@ -863,7 +868,7 @@ class VisualizationTab(QWidget):
         encoded = base64.b64encode(buffer.read()).decode("ascii")
         return (
             f"<img src='data:image/png;base64,{encoded}' "
-            "style='width:100%; max-width:820px; margin-top:10px;' />"
+            f"width='{REPORT_IMAGE_WIDTH}' style='margin-top:10px;' />"
         )
 
     def analysis_rows(self) -> list[tuple[str, str]]:
