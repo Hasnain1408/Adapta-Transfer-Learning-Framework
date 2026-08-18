@@ -4,12 +4,10 @@ import base64
 import io
 from typing import Optional
 
-from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -21,11 +19,13 @@ from matplotlib.backends.backend_qt5agg import (
     NavigationToolbar2QT as NavigationToolbar,
 )
 from matplotlib.figure import Figure
-import numpy as np
-from sklearn.decomposition import PCA
-from sklearn.metrics import confusion_matrix
 
 from domain.models import TransferLearningResult
+from presentation.qt.charts_plots import (
+    plot_confusion_matrix,
+    plot_domain_alignment,
+    plot_metrics,
+)
 from presentation.qt.report import REPORT_IMAGE_WIDTH
 from presentation.qt.style import DARK_PALETTE
 
@@ -167,13 +167,13 @@ class AnalyticsChartsWidget(QWidget):
             self._render_overview(result)
         elif view_mode == "Domain Feature Alignment":
             ax = self._figure.add_subplot(111)
-            self._plot_domain_alignment(ax, result)
+            plot_domain_alignment(ax, result, self._palette)
         elif view_mode == "Confusion Matrix":
             ax = self._figure.add_subplot(111)
-            self._plot_confusion_matrix(ax, result)
+            plot_confusion_matrix(self._figure, ax, result)
         elif view_mode == "Performance Metrics":
             ax = self._figure.add_subplot(111)
-            self._plot_metrics(ax, result)
+            plot_metrics(ax, result, self._palette)
 
         self._figure.tight_layout()
         self._canvas.draw()
@@ -182,165 +182,16 @@ class AnalyticsChartsWidget(QWidget):
         has_metrics = result.metrics is not None and result.target_predictions is not None
         if has_metrics:
             ax1 = self._figure.add_subplot(2, 2, 1)
-            self._plot_domain_alignment(ax1, result)
+            plot_domain_alignment(ax1, result, self._palette)
 
             ax2 = self._figure.add_subplot(2, 2, 2)
-            self._plot_confusion_matrix(ax2, result)
+            plot_confusion_matrix(self._figure, ax2, result)
 
             ax3 = self._figure.add_subplot(2, 2, (3, 4))
-            self._plot_metrics(ax3, result)
+            plot_metrics(ax3, result, self._palette)
         else:
             ax = self._figure.add_subplot(111)
-            self._plot_domain_alignment(ax, result)
-
-    def _plot_domain_alignment(self, ax, result: TransferLearningResult) -> None:
-        src = result.transformed_source
-        tgt = result.transformed_target
-
-        if src.shape[1] > 2:
-            pca = PCA(n_components=2)
-            all_feats = np.vstack([src, tgt])
-            pca.fit(all_feats)
-            src_2d = pca.transform(src)
-            tgt_2d = pca.transform(tgt)
-            xlabel, ylabel = "PCA Component 1", "PCA Component 2"
-        elif src.shape[1] == 2:
-            src_2d, tgt_2d = src, tgt
-            xlabel, ylabel = "Component 1", "Component 2"
-        else:
-            # 1D feature space
-            src_2d = np.column_stack([src[:, 0], np.zeros(src.shape[0])])
-            tgt_2d = np.column_stack([tgt[:, 0], np.zeros(tgt.shape[0])])
-            xlabel, ylabel = "Component 1", ""
-
-        accent_col = self._palette.get("accent", "#1e6fd9")
-        success_col = self._palette.get("success", "#14804a")
-        danger_col = self._palette.get("danger", "#b3261e")
-
-        ax.scatter(
-            src_2d[:, 0],
-            src_2d[:, 1],
-            c=accent_col,
-            alpha=0.6,
-            edgecolors="none",
-            s=40,
-            label=f"Source ({src.shape[0]} samples)",
-        )
-
-        if result.prediction_correctness is not None:
-            correct_mask = np.array([c == "Right" for c in result.prediction_correctness])
-            ax.scatter(
-                tgt_2d[correct_mask, 0],
-                tgt_2d[correct_mask, 1],
-                c=success_col,
-                marker="^",
-                alpha=0.8,
-                s=45,
-                label=f"Target Correct ({np.sum(correct_mask)})",
-            )
-            ax.scatter(
-                tgt_2d[~correct_mask, 0],
-                tgt_2d[~correct_mask, 1],
-                c=danger_col,
-                marker="x",
-                alpha=0.9,
-                s=55,
-                linewidths=1.5,
-                label=f"Target Incorrect ({np.sum(~correct_mask)})",
-            )
-        else:
-            ax.scatter(
-                tgt_2d[:, 0],
-                tgt_2d[:, 1],
-                c=success_col,
-                marker="^",
-                alpha=0.7,
-                s=45,
-                label=f"Target ({tgt.shape[0]} samples)",
-            )
-
-        ax.set_title("Transformed Feature Space Alignment", fontsize=11, fontweight="bold", pad=8)
-        ax.set_xlabel(xlabel, fontsize=9)
-        if ylabel:
-            ax.set_ylabel(ylabel, fontsize=9)
-        ax.grid(True, linestyle="--", alpha=0.3)
-        ax.legend(fontsize=8, loc="best")
-
-    def _plot_confusion_matrix(self, ax, result: TransferLearningResult) -> None:
-        if result.target_actuals is None or result.target_predictions is None:
-            ax.axis("off")
-            ax.text(0.5, 0.5, "No target labels available", ha="center", va="center")
-            return
-
-        y_true = result.target_actuals
-        y_pred = result.target_predictions
-        labels = np.unique(np.concatenate([y_true, y_pred]))
-
-        cm = confusion_matrix(y_true, y_pred, labels=labels)
-        im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
-
-        ax.set_title("Target Classification Confusion Matrix", fontsize=11, fontweight="bold", pad=8)
-        self._figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-        tick_marks = np.arange(len(labels))
-        ax.set_xticks(tick_marks)
-        ax.set_xticklabels([str(lbl) for lbl in labels], fontsize=8, rotation=45 if len(str(labels[0])) > 5 else 0)
-        ax.set_yticks(tick_marks)
-        ax.set_yticklabels([str(lbl) for lbl in labels], fontsize=8)
-
-        ax.set_xlabel("Predicted Label", fontsize=9)
-        ax.set_ylabel("Actual Label", fontsize=9)
-
-        # Annotate cell counts
-        thresh = cm.max() / 2.0 if cm.max() > 0 else 1.0
-        for i in range(cm.shape[0]):
-            for j in range(cm.shape[1]):
-                count = cm[i, j]
-                ax.text(
-                    j,
-                    i,
-                    f"{count}",
-                    ha="center",
-                    va="center",
-                    color="white" if count > thresh else "black",
-                    fontsize=10,
-                    fontweight="bold",
-                )
-
-    def _plot_metrics(self, ax, result: TransferLearningResult) -> None:
-        metrics = result.metrics
-        if metrics is None:
-            ax.axis("off")
-            ax.text(0.5, 0.5, "Metrics unavailable", ha="center", va="center")
-            return
-
-        names = ["Accuracy", "Precision", "Recall", "F1 Score"]
-        values = [metrics.accuracy, metrics.precision, metrics.recall, metrics.f1_score]
-        colors = [
-            self._palette["metric_teal"],
-            self._palette["metric_purple"],
-            self._palette["metric_amber"],
-            self._palette["metric_pink"],
-        ]
-
-        bars = ax.bar(names, values, color=colors, width=0.55, edgecolor="none", alpha=0.85)
-
-        ax.set_ylim(0, 1.15)
-        ax.set_ylabel("Score", fontsize=9)
-        ax.set_title("Target Domain Evaluation Metrics", fontsize=11, fontweight="bold", pad=8)
-        ax.grid(axis="y", linestyle="--", alpha=0.3)
-
-        for bar, val in zip(bars, values):
-            height = bar.get_height()
-            ax.text(
-                bar.get_x() + bar.get_width() / 2.0,
-                height + 0.02,
-                f"{val:.4f}",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                fontweight="bold",
-            )
+            plot_domain_alignment(ax, result, self._palette)
 
     def render_to_base64_html(self) -> str:
         """Render the current figure to a base64 encoded PNG for HTML/PDF reports.

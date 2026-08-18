@@ -119,6 +119,119 @@ class MainWindow(
         self._connect_signals()
         self._sync_method_parameters()
         self._update_auth_ui()
+        # The app opens on the landing page; the workspace is one click away
+        # and is built and ready behind it.
+        self._show_landing()
+
+    # ------------------------------------------------------------------
+    # Landing page navigation
+    # ------------------------------------------------------------------
+    def _show_landing(self) -> None:
+        """Bring the landing page to the front.
+
+        Safe at any time, including mid-run: the workspace page is only
+        stacked behind, not torn down, and the status bar carrying the
+        experiment's progress belongs to the window rather than either page.
+        """
+        self._update_landing_session()
+        self._page_stack.setCurrentIndex(0)
+        # A full application menu over a landing page reads like a leftover
+        # from the screen behind it. Menu-action shortcuts keep working while
+        # it is hidden (they are scoped to the window, not to the menu bar's
+        # visibility), so Ctrl+H still comes back here.
+        self._menu_bar.setVisible(False)
+
+    def _show_workspace(self) -> None:
+        self._page_stack.setCurrentIndex(1)
+        self._menu_bar.setVisible(True)
+
+    def _update_landing_session(self) -> None:
+        """Push database/auth state onto the landing page's cards."""
+        landing = getattr(self, "_landing_page", None)
+        if landing is None:
+            return
+        landing.set_session(
+            has_database=self._catalog is not None,
+            signed_in=self._current_user is not None,
+            user_label=self._user_label.text(),
+        )
+        landing.set_theme_label(self._theme_toggle_button.text())
+
+    def _navigate_from_landing(self, key: str) -> None:
+        """Route one landing-page choice to the thing it names.
+
+        The whole mapping lives here so ``LandingPage`` stays a view that
+        emits names and knows nothing about the window's internals.
+        """
+        if key == "experiment":
+            self._show_workspace()
+            if self._batch_mode_check.isEnabled():
+                self._batch_mode_check.setChecked(False)
+        elif key == "batch":
+            self._show_workspace()
+            if self._batch_mode_check.isEnabled():
+                self._batch_mode_check.setChecked(True)
+        elif key == "comparison":
+            self._open_workspace_tab(self._comparison_tab)
+        elif key == "history":
+            self._open_history_from_landing()
+        elif key == "registry":
+            # Dialogs open over whichever page is showing, so the user comes
+            # back to the landing page rather than being dropped into the
+            # workspace by a side effect of closing a dialog. The database
+            # check is here because _open_dataset_registry returns silently
+            # without one, and a card that swallows the click explains
+            # nothing.
+            if self._catalog is None:
+                self._explain_database_outage()
+            else:
+                self._open_dataset_registry()
+        elif key == "learning":
+            self._open_learning_materials(0)
+        elif key == "auth":
+            self._handle_auth_button_clicked()
+            self._update_landing_session()
+        elif key == "theme":
+            self._toggle_theme()
+        elif key == "exit":
+            self._exit_application()
+
+    def _explain_database_outage(self) -> None:
+        """Say why a database-backed module is unreachable."""
+        message_box.info(
+            self,
+            "Database Unavailable",
+            "This module reads from the experiment database.",
+            "Adapta could not connect, so there is nothing to show here yet. "
+            "Experiments still run — they just aren't recorded.",
+        )
+
+    def _open_workspace_tab(self, tab) -> None:
+        """Switch to the workspace with *tab* selected in the results area."""
+        if self._catalog is None:
+            self._explain_database_outage()
+            return
+        self._show_workspace()
+        # The results area starts on its empty-state page; these tabs are
+        # populated from the database, not from a run, so they are worth
+        # showing before any experiment has finished.
+        self._results_stack.setCurrentIndex(1)
+        index = self._results_tabs.indexOf(tab)
+        if index >= 0:
+            self._results_tabs.setCurrentIndex(index)
+
+    def _open_history_from_landing(self) -> None:
+        """History needs both a database and a signed-in user."""
+        if self._catalog is None:
+            self._open_workspace_tab(self._history_tab)  # explains the outage
+            return
+        if self._current_user is None:
+            self._show_login_dialog()
+            self._update_landing_session()
+            if self._current_user is None:
+                return
+        self._show_workspace()
+        self._show_history()
 
     def changeEvent(self, event) -> None:
         super().changeEvent(event)

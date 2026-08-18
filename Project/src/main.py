@@ -11,7 +11,11 @@ from PyQt5.QtWidgets import QApplication
 from application.authentication_use_case import AuthenticationUseCase
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
+from infrastructure.data.arff_dataset_loader import ARFFDatasetLoader
 from infrastructure.data.csv_dataset_loader import CSVDatasetLoader
+from infrastructure.data.dataset_loader import DatasetLoader
+from infrastructure.data.mat_dataset_loader import MATDatasetLoader
+from infrastructure.data.xlsx_dataset_loader import XLSXDatasetLoader
 from infrastructure.methods.tca_method import TCAMethod
 from infrastructure.methods.jda_method import JDAMethod
 from infrastructure.methods.coral_method import CORALMethod
@@ -77,7 +81,9 @@ def build_window(
     auth: AuthenticationUseCase | None = None,
     database_error: str | None = None,
 ) -> MainWindow:
-    loader = CSVDatasetLoader()
+    loader = DatasetLoader(
+        [CSVDatasetLoader(), XLSXDatasetLoader(), MATDatasetLoader(), ARFFDatasetLoader()]
+    )
     methods = [
         TCAMethod(latent_dim=5, regularization=1.0, kernel_type="linear"),
         JDAMethod(latent_dim=5, regularization=1.0, kernel_type="linear", iterations=10),
