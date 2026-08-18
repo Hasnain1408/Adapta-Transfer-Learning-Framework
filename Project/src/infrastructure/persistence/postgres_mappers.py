@@ -18,12 +18,7 @@ from domain.entities import (
     UserRole,
 )
 
-from .database import PSYCOPG2_AVAILABLE
-
-if PSYCOPG2_AVAILABLE:  # pragma: no cover - import-time branch
-    from psycopg2 import errors as pg_errors
-else:  # pragma: no cover
-    pg_errors = None  # type: ignore[assignment]
+from .driver import pg_errors
 
 
 def _as_list(value: Any) -> list[str]:
