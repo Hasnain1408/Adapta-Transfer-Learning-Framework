@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional
 
 from PyQt5.QtCore import Qt
@@ -291,7 +292,12 @@ class ComparisonExportDialog(QDialog):
 
     def _validate_and_accept(self) -> None:
         if not self.selected_views() and not self.include_table():
-            message_box.warning(self, "Nothing Selected", "Select at least one comparison to export.")
+            message_box.warn(
+                self,
+                "Nothing Selected",
+                "Pick at least one chart or the table to export.",
+                "An empty report would contain only the title page.",
+            )
             return
         self.accept()
 
@@ -1298,8 +1304,11 @@ class ComparisonTab(QWidget):
 
     def _export_pdf(self) -> None:
         if not self.visible_rows():
-            message_box.warning(
-                self, "Nothing to Export", "There are no stored results to compare."
+            message_box.warn(
+                self,
+                "Nothing to Compare",
+                "No stored results for this source-target pair.",
+                "Run an experiment on this pair while logged in, then try again.",
             )
             return
 
@@ -1351,11 +1360,21 @@ class ComparisonTab(QWidget):
             printer.setOutputFileName(path)
             printer.setPageMargins(15, 15, 15, 15, QPrinter.Millimeter)
             document.print_(printer)
-        except Exception as exc:  # noqa: BLE001 - shown verbatim
-            message_box.critical(self, "Export Failed", f"The report could not be written:\n\n{exc}")
+        except Exception as exc:  # noqa: BLE001 - raw text goes to the details pane
+            message_box.error(
+                self,
+                "Export Failed",
+                "The comparison report couldn't be saved.",
+                f"Nothing was written to {Path(path).name}. Check that the folder "
+                "is writable and that the file isn't open in another app.",
+                technical=str(exc),
+            )
             return
-        message_box.information(
-            self, "Report Exported", f"The comparison report was saved to:\n\n{path}"
+        message_box.success(
+            self,
+            "Report Exported",
+            "Your comparison report is ready.",
+            f"Saved as {Path(path).name} in {Path(path).parent}.",
         )
 
     def _export_csv(self) -> None:
@@ -1395,9 +1414,21 @@ class ComparisonTab(QWidget):
                 writer.writerow([f"# {key}: {value}" for key, value in self.context().items()])
                 writer.writerows(rows)
         except OSError as exc:
-            message_box.critical(self, "Export Failed", f"Could not write the CSV:\n\n{exc}")
+            message_box.error(
+                self,
+                "Export Failed",
+                "The CSV couldn't be saved.",
+                f"Nothing was written to {Path(path).name}. Check that the folder "
+                "is writable and that the file isn't open in another app.",
+                technical=str(exc),
+            )
             return
-        message_box.information(self, "CSV Exported", f"The comparison table was saved to:\n\n{path}")
+        message_box.success(
+            self,
+            "CSV Exported",
+            "Your comparison table is ready.",
+            f"Saved as {Path(path).name} in {Path(path).parent}.",
+        )
 
 
 __all__ = [

@@ -37,18 +37,21 @@ class AuthenticationUseCase:
     ) -> User:
         name = name.strip()
         email = email.strip()
+        # These messages are shown to the user verbatim by the auth dialog,
+        # so they are written as finished sentences — no !r quoting, which
+        # renders as programmer-style 'quotes' in a dialog.
         if not name:
             raise AuthenticationError("Enter your name.")
         if not email or "@" not in email or email.startswith("@") or email.endswith("@"):
-            raise AuthenticationError(f"{email!r} does not look like an email address.")
+            raise AuthenticationError(f"“{email}” doesn't look like an email address.")
         if len(password) < _MIN_PASSWORD_LENGTH:
             raise AuthenticationError(
-                f"Password must be at least {_MIN_PASSWORD_LENGTH} characters long."
+                f"Choose a password of at least {_MIN_PASSWORD_LENGTH} characters."
             )
         # Checked here too (not just the unique index) so the failure reads as
         # a normal validation message instead of a raw driver exception.
         if self._users.get_by_email(email) is not None:
-            raise AuthenticationError(f"An account with the email {email!r} already exists.")
+            raise AuthenticationError(f"An account already exists for {email}.")
 
         user = User(
             name=name,

@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -283,23 +282,27 @@ class HistoryTab(QWidget):
         if entry is None or self._catalog is None or entry.experiment.id is None:
             return
 
-        confirmed = message_box.question(
+        confirmed = message_box.confirm(
             self,
             "Delete Experiment",
-            f"Delete experiment #{entry.experiment.id} "
-            f"({entry.experiment.tl_algorithm})?\n\n"
-            "Its evaluation scores are deleted with it. This cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            f"Delete experiment #{entry.experiment.id} ({entry.experiment.tl_algorithm})?",
+            "Its evaluation scores go with it, and the Comparison charts stop "
+            "counting it. This can't be undone.",
+            confirm_label="Delete",
+            destructive=True,
         )
-        if confirmed != QMessageBox.Yes:
+        if not confirmed:
             return
 
         try:
             self._catalog.delete_experiment(entry.experiment.id)
-        except Exception as exc:  # noqa: BLE001 - shown verbatim
-            message_box.critical(
-                self, "Delete Failed", f"The experiment could not be deleted:\n\n{exc}"
+        except Exception as exc:  # noqa: BLE001
+            message_box.error(
+                self,
+                "Delete Failed",
+                f"Experiment #{entry.experiment.id} wasn't deleted.",
+                "It's still in your history. Try again in a moment.",
+                technical=str(exc),
             )
             return
         self.refresh()

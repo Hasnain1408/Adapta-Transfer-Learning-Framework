@@ -87,6 +87,12 @@ class MainWindowSessionMixin:
             self._results_tabs.removeTab(index)
 
     def _handle_auth_button_clicked(self) -> None:
+        # A run records itself under whoever is signed in when it *finishes*
+        # (see _persist_run), not who started it — switching accounts
+        # mid-run would credit it to the wrong person, so both directions
+        # wait like every other database-touching action.
+        if self._reject_if_busy("signing in or out"):
+            return
         if self._current_user is None:
             self._show_login_dialog()
         else:
@@ -94,10 +100,12 @@ class MainWindowSessionMixin:
 
     def _show_login_dialog(self) -> None:
         if self._auth is None:
-            message_box.information(
+            message_box.info(
                 self,
                 "Log In Unavailable",
-                "Sign-in is only available when the database connection is active.",
+                "Signing in needs a database connection.",
+                "You can still run experiments — they just won't be saved to "
+                "History until a connection is available.",
             )
             return
 
@@ -118,10 +126,12 @@ class MainWindowSessionMixin:
         self._update_context_label()
         self._update_auth_ui()
         self._set_status("You have been logged out.", "neutral")
-        message_box.information(
+        message_box.success(
             self,
             "Logged Out",
-            "You have been logged out. You can keep running experiments, but history stays hidden until you log in again.",
+            "You're signed out.",
+            "You can keep running experiments. History and saved results stay "
+            "hidden until you log in again.",
         )
 
     def _current_user_id(self) -> int | None:
@@ -194,6 +204,8 @@ class MainWindowSessionMixin:
 
     def _show_history(self) -> None:
         """Bring the History tab to the front and reload user-specific history."""
+        if self._reject_if_busy("refreshing history"):
+            return
         if self._catalog is None or self._current_user is None:
             return
         self._history_tab.set_current_user(self._current_user)
@@ -205,6 +217,8 @@ class MainWindowSessionMixin:
             self._results_tabs.setCurrentIndex(index)
 
     def _open_user_manager(self) -> None:
+        if self._reject_if_busy("opening User Management"):
+            return
         if self._catalog is None:
             return
         dialog = UserManagerDialog(self._catalog, build_style_sheet(self._palette), self)
@@ -219,6 +233,8 @@ class MainWindowSessionMixin:
         self._comparison_tab.refresh()
 
     def _open_dataset_registry(self) -> None:
+        if self._reject_if_busy("opening the Dataset Registry"):
+            return
         if self._catalog is None:
             return
         dialog = DatasetRegistryDialog(
@@ -227,30 +243,38 @@ class MainWindowSessionMixin:
         dialog.exec_()
 
     def _show_database_info(self) -> None:
+        if self._reject_if_busy("checking database info"):
+            return
         if self._catalog is None:
-            message_box.warning(
+            message_box.error(
                 self,
                 "Database Unavailable",
-                "No PostgreSQL connection.\n\n"
-                + (self._database_error or "No connection details were configured."),
+                "Not connected to the experiment database.",
+                "Experiments still run normally — they just aren't saved to "
+                "History, and logging in is unavailable.",
+                technical=self._database_error
+                or "No connection details were configured (DATABASE_URL is unset).",
             )
             return
 
         try:
             stats = self._catalog.statistics()
         except Exception as exc:  # noqa: BLE001
-            message_box.critical(self, "Database Error", str(exc))
+            message_box.error(
+                self,
+                "Database Error",
+                "Connected, but couldn't read the record counts.",
+                "The connection may have dropped just now. Try again in a moment.",
+                technical=str(exc),
+            )
             return
 
-        message_box.information(
+        message_box.success(
             self,
-            "Database Connection",
-            "<b>PostgreSQL connected</b>"
-            "<p>Stored records:</p>"
-            f"<ul><li>Users: {stats['users']}</li>"
-            f"<li>Datasets: {stats['datasets']}</li>"
-            f"<li>Experiments: {stats['experiments']}</li>"
-            f"<li>Evaluations: {stats['evaluations']}</li></ul>",
+            "Database Connected",
+            "PostgreSQL is connected and responding.",
+            f"Stored records — {stats['users']} users, {stats['datasets']} datasets, "
+            f"{stats['experiments']} experiments, {stats['evaluations']} evaluations.",
         )
 
     def _apply_configuration(self, experiment: ExperimentRecord) -> None:

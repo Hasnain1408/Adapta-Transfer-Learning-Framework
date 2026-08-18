@@ -19,7 +19,6 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -113,21 +112,27 @@ class UserEditorDialog(QDialog):
         exception into a readable message.
         """
         if not self._name_input.text().strip():
-            message_box.warning(self, "Name Required", "Enter a name for the user.")
+            message_box.warn(self, "Name Needed", "Enter a name for this user.")
             return
         email = self._email_input.text().strip()
         if not email:
-            message_box.warning(self, "Email Required", "Enter an email address.")
+            message_box.warn(self, "Email Needed", "Enter an email address for this user.")
             return
         if "@" not in email or email.startswith("@") or email.endswith("@"):
-            message_box.warning(
-                self, "Invalid Email", f"{email!r} does not look like an email address."
+            message_box.warn(
+                self,
+                "Check the Email",
+                f"“{email}” doesn't look like an email address.",
+                "It should be in the form name@example.com.",
             )
             return
         password = self._password_input.text()
         if password and len(password) < 8:
-            message_box.warning(
-                self, "Weak Password", "Password must be at least 8 characters long."
+            message_box.warn(
+                self,
+                "Password Too Short",
+                "Choose a password of at least 8 characters.",
+                "Leave the field empty to keep this user's current password.",
             )
             return
         self.accept()
@@ -287,11 +292,17 @@ class UserManagerDialog(QDialog):
             )
         except ValueError as exc:
             # Duplicate email — the repository translates the unique-index
-            # violation into this.
-            message_box.warning(self, "Could Not Add User", str(exc))
+            # violation into this already-readable sentence.
+            message_box.warn(self, "Couldn't Add User", str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            message_box.critical(self, "Database Error", str(exc))
+            message_box.error(
+                self,
+                "Couldn't Add User",
+                f"{user.name} wasn't added.",
+                "The database rejected the change. Try again in a moment.",
+                technical=str(exc),
+            )
             return
         self.refresh()
 
@@ -305,10 +316,16 @@ class UserManagerDialog(QDialog):
         try:
             self._catalog.update_user(dialog.user())
         except ValueError as exc:
-            message_box.warning(self, "Could Not Save User", str(exc))
+            message_box.warn(self, "Couldn't Save User", str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            message_box.critical(self, "Database Error", str(exc))
+            message_box.error(
+                self,
+                "Couldn't Save User",
+                f"Changes to {user.name} weren't saved.",
+                "The database rejected the change. Try again in a moment.",
+                technical=str(exc),
+            )
             return
         self.refresh()
 
@@ -316,20 +333,27 @@ class UserManagerDialog(QDialog):
         user = self._selected_user()
         if user is None or user.id is None:
             return
-        confirmed = message_box.question(
+        confirmed = message_box.confirm(
             self,
             "Delete User",
-            f"Delete {user.name} ({user.email})?\n\n"
-            "Their experiments are kept but become unattributed.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            f"Delete {user.name}?",
+            f"{user.email}\n\nTheir experiments are kept, but stop being "
+            "attributed to anyone. This can't be undone.",
+            confirm_label="Delete",
+            destructive=True,
         )
-        if confirmed != QMessageBox.Yes:
+        if not confirmed:
             return
         try:
             self._catalog.delete_user(user.id)
         except Exception as exc:  # noqa: BLE001
-            message_box.critical(self, "Delete Failed", str(exc))
+            message_box.error(
+                self,
+                "Delete Failed",
+                f"{user.name} wasn't deleted.",
+                "The account is unchanged. Try again in a moment.",
+                technical=str(exc),
+            )
             return
         self.refresh()
 
@@ -492,20 +516,26 @@ class DatasetRegistryDialog(QDialog):
         dataset = self._selected_dataset()
         if dataset is None or dataset.id is None:
             return
-        confirmed = message_box.question(
+        confirmed = message_box.confirm(
             self,
             "Remove Dataset",
-            f"Remove {dataset.name} from the registry?\n\n"
-            "The file on disk is not touched. Experiments that used it are "
-            "kept and keep their domain names.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            f"Remove {dataset.name} from the registry?",
+            "The file on disk isn't touched, and experiments that used it are "
+            "kept with their domain names. It re-registers next time you run it.",
+            confirm_label="Remove",
+            destructive=True,
         )
-        if confirmed != QMessageBox.Yes:
+        if not confirmed:
             return
         try:
             self._catalog.delete_dataset(dataset.id)
         except Exception as exc:  # noqa: BLE001
-            message_box.critical(self, "Delete Failed", str(exc))
+            message_box.error(
+                self,
+                "Remove Failed",
+                f"{dataset.name} wasn't removed.",
+                "The registry is unchanged. Try again in a moment.",
+                technical=str(exc),
+            )
             return
         self.refresh()

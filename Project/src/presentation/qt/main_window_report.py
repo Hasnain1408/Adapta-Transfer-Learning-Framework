@@ -178,15 +178,23 @@ class MainWindowReportMixin:
             printer.setOutputFileName(file_path)
             printer.setPageMargins(15, 15, 15, 15, QPrinter.Millimeter)
             document.print_(printer)
-        except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
-            message_box.critical(
-                self, "Export Failed", f"The report could not be written:\n\n{exc}"
+        except Exception as exc:  # noqa: BLE001 - raw text goes to the details pane
+            message_box.error(
+                self,
+                "Export Failed",
+                "The report couldn't be saved.",
+                f"Nothing was written to {Path(file_path).name}. Check that the "
+                "folder is writable and that the file isn't open in another app.",
+                technical=str(exc),
             )
             return
 
         self._set_status("Report exported", "success")
-        message_box.information(
-            self, "Report Exported", f"The PDF report was saved to:\n\n{file_path}"
+        message_box.success(
+            self,
+            "Report Exported",
+            "Your PDF report is ready.",
+            f"Saved as {Path(file_path).name} in {Path(file_path).parent}.",
         )
 
     # ------------------------------------------------------------------
@@ -258,8 +266,12 @@ class MainWindowReportMixin:
         if self._reject_if_busy("exporting a report"):
             return
         if pair.result is None:
-            message_box.warning(
-                self, "Nothing to Export", "This pair failed and produced no result."
+            message_box.warn(
+                self,
+                "Nothing to Export",
+                "This pair didn't produce a result.",
+                "It failed during the batch, so there are no scores or charts "
+                "to put in a report. Pick a pair marked OK instead.",
             )
             return
         sections = self._pick_sections(

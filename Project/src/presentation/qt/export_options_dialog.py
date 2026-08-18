@@ -109,7 +109,12 @@ class ExportOptionsDialog(QDialog):
 
     def _validate_and_accept(self) -> None:
         if not any(box.isChecked() for box in self._checkboxes.values()):
-            message_box.warning(self, "Nothing Selected", "Select at least one section to export.")
+            message_box.warn(
+                self,
+                "Nothing Selected",
+                "Pick at least one section to export.",
+                "An empty report would contain only the title page.",
+            )
             return
         self.accept()
 

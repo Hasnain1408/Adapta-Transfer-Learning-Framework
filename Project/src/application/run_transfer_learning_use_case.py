@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from itertools import permutations
 from time import perf_counter
 
 from pathlib import Path
+
+from threadpoolctl import threadpool_limits
 
 from domain.interfaces import DatasetLoader, TransferLearningMethod
 from domain.mmd import classify_alignment, compute_mmd, percentage_change
@@ -52,6 +55,18 @@ def _ignore_progress(*_args, **_kwargs) -> None:
     None`` — the checks were already the noisiest thing in the method.
     """
 
+
+#: Cap on how many threads BLAS/OpenMP may use for one run's linear algebra
+#: (eigendecompositions, matrix multiplies, the classifier fit/predict).
+#: Left uncapped, OpenBLAS defaults to roughly one thread per logical core;
+#: measured on a 16-core dev machine, a single MEDA run alone pinned over
+#: 900% total CPU. That is enough to starve everything else on the same
+#: machine of scheduler time -- including, over a remote session, the
+#: process actually rendering the editor window, which then reports itself
+#: as "not responding" with no error from this app at all to explain why.
+#: Half the cores (floor 1) keeps a run fast while leaving the rest of the
+#: system able to breathe.
+_MAX_COMPUTE_THREADS = max(1, (os.cpu_count() or 4) // 2)
 
 #: Request field -> the private attribute a method must expose to receive it.
 TUNABLE_PARAMETERS = {
@@ -167,140 +182,141 @@ class RunTransferLearningUseCase:
                 return (X - mean) @ W
             return X
 
-        report(STAGE_PREPROCESSING, request.normalization)
-        source_features = apply_normalization(source_dataset.features.copy(), request.normalization)
-        target_features = apply_normalization(target_dataset.features.copy(), request.normalization)
+        with threadpool_limits(limits=_MAX_COMPUTE_THREADS):
+            report(STAGE_PREPROCESSING, request.normalization)
+            source_features = apply_normalization(source_dataset.features.copy(), request.normalization)
+            target_features = apply_normalization(target_dataset.features.copy(), request.normalization)
 
-        report(STAGE_PREPROCESSING, request.standardization)
-        source_features = apply_standardization(source_features, request.standardization)
-        target_features = apply_standardization(target_features, request.standardization)
+            report(STAGE_PREPROCESSING, request.standardization)
+            source_features = apply_standardization(source_features, request.standardization)
+            target_features = apply_standardization(target_features, request.standardization)
 
-        method = self._methods[request.method_name]
+            method = self._methods[request.method_name]
         
-        for field, attribute in TUNABLE_PARAMETERS.items():
-            if hasattr(method, attribute):
-                setattr(method, attribute, getattr(request, field))
+            for field, attribute in TUNABLE_PARAMETERS.items():
+                if hasattr(method, attribute):
+                    setattr(method, attribute, getattr(request, field))
 
 
-        # A one-shot method (CORAL, GFK, TCA) reports only this; the
-        # iterative ones overwrite the detail once per iteration from inside
-        # their own loop, via control.report_iteration.
-        report(
-            STAGE_ADAPTING,
-            f"{request.method_name} on "
-            f"{source_features.shape[0]}+{target_features.shape[0]} samples",
-        )
-
-        # Timed on its own so the cost attributable to the *method* can be
-        # read apart from the loading and classification around it.
-        adaptation_started = perf_counter()
-        paused_before_adaptation = control.paused_seconds if control is not None else 0.0
-        transformed_source, transformed_target = method.run(
-            source_features,
-            target_features,
-            source_labels=source_dataset.labels,
-            control=control,
-        )
-        # A pause blocks inside method.run's own checkpoints, so the elapsed
-        # wall clock would otherwise count however long the user left it
-        # paused as if it were compute.
-        paused_during_adaptation = (
-            control.paused_seconds - paused_before_adaptation if control is not None else 0.0
-        )
-        adaptation_seconds = max(
-            0.0, perf_counter() - adaptation_started - paused_during_adaptation
-        )
-
-        output_feature_names = [
-            f"{request.method_name.lower()}_feature_{index + 1}"
-            for index in range(transformed_target.shape[1])
-        ]
-
-        metrics = None
-        target_predictions = None
-        target_actuals = None
-        prediction_correctness = None
-        negative_transfer = None
-
-        if source_dataset.labels is not None and target_dataset.labels is not None:
+            # A one-shot method (CORAL, GFK, TCA) reports only this; the
+            # iterative ones overwrite the detail once per iteration from inside
+            # their own loop, via control.report_iteration.
             report(
-                STAGE_CLASSIFYING,
-                f"{request.classifier} on {transformed_target.shape[0]} target samples",
+                STAGE_ADAPTING,
+                f"{request.method_name} on "
+                f"{source_features.shape[0]}+{target_features.shape[0]} samples",
             )
-            metrics, target_predictions = self._evaluate(
-                request.classifier,
-                transformed_source,
-                source_dataset.labels,
-                transformed_target,
-                target_dataset.labels,
+
+            # Timed on its own so the cost attributable to the *method* can be
+            # read apart from the loading and classification around it.
+            adaptation_started = perf_counter()
+            paused_before_adaptation = control.paused_seconds if control is not None else 0.0
+            transformed_source, transformed_target = method.run(
+                source_features,
+                target_features,
+                source_labels=source_dataset.labels,
+                control=control,
             )
-            target_actuals = target_dataset.labels
-            prediction_correctness = [
-                "Right" if p == a else "Wrong"
-                for p, a in zip(target_predictions, target_actuals)
+            # A pause blocks inside method.run's own checkpoints, so the elapsed
+            # wall clock would otherwise count however long the user left it
+            # paused as if it were compute.
+            paused_during_adaptation = (
+                control.paused_seconds - paused_before_adaptation if control is not None else 0.0
+            )
+            adaptation_seconds = max(
+                0.0, perf_counter() - adaptation_started - paused_during_adaptation
+            )
+
+            output_feature_names = [
+                f"{request.method_name.lower()}_feature_{index + 1}"
+                for index in range(transformed_target.shape[1])
             ]
 
-            # The same classifier over the *un-adapted* features: the score
-            # you would have got by skipping domain adaptation entirely.
-            # Without this there is nothing to call negative transfer against.
-            if control is not None:
-                control.checkpoint()
-            report(STAGE_BASELINE, f"{request.classifier} without adaptation")
-            try:
-                baseline_metrics, _ = self._evaluate(
+            metrics = None
+            target_predictions = None
+            target_actuals = None
+            prediction_correctness = None
+            negative_transfer = None
+
+            if source_dataset.labels is not None and target_dataset.labels is not None:
+                report(
+                    STAGE_CLASSIFYING,
+                    f"{request.classifier} on {transformed_target.shape[0]} target samples",
+                )
+                metrics, target_predictions = self._evaluate(
                     request.classifier,
-                    source_features,
+                    transformed_source,
                     source_dataset.labels,
-                    target_features,
+                    transformed_target,
                     target_dataset.labels,
                 )
-            except RunCancelled:
-                raise
-            except Exception:  # noqa: BLE001 - a missing baseline must not sink the run
-                baseline_metrics = None
+                target_actuals = target_dataset.labels
+                prediction_correctness = [
+                    "Right" if p == a else "Wrong"
+                    for p, a in zip(target_predictions, target_actuals)
+                ]
 
-            if baseline_metrics is not None:
-                accuracy_delta = metrics.accuracy - baseline_metrics.accuracy
-                negative_transfer = NegativeTransferAnalysis(
-                    baseline=baseline_metrics,
-                    adapted=metrics,
-                    accuracy_delta=accuracy_delta,
-                    f1_delta=metrics.f1_score - baseline_metrics.f1_score,
-                    is_negative_transfer=accuracy_delta < -NEGATIVE_TRANSFER_TOLERANCE,
-                )
+                # The same classifier over the *un-adapted* features: the score
+                # you would have got by skipping domain adaptation entirely.
+                # Without this there is nothing to call negative transfer against.
+                if control is not None:
+                    control.checkpoint()
+                report(STAGE_BASELINE, f"{request.classifier} without adaptation")
+                try:
+                    baseline_metrics, _ = self._evaluate(
+                        request.classifier,
+                        source_features,
+                        source_dataset.labels,
+                        target_features,
+                        target_dataset.labels,
+                    )
+                except RunCancelled:
+                    raise
+                except Exception:  # noqa: BLE001 - a missing baseline must not sink the run
+                    baseline_metrics = None
 
-        if control is not None:
-            control.checkpoint()
-        report(STAGE_ALIGNMENT, "MMD before vs. after adaptation")
-        alignment = self._measure_alignment(
-            source_features, target_features, transformed_source, transformed_target
-        )
+                if baseline_metrics is not None:
+                    accuracy_delta = metrics.accuracy - baseline_metrics.accuracy
+                    negative_transfer = NegativeTransferAnalysis(
+                        baseline=baseline_metrics,
+                        adapted=metrics,
+                        accuracy_delta=accuracy_delta,
+                        f1_delta=metrics.f1_score - baseline_metrics.f1_score,
+                        is_negative_transfer=accuracy_delta < -NEGATIVE_TRANSFER_TOLERANCE,
+                    )
 
-        report(STAGE_FINALIZING, "assembling results")
-        return TransferLearningResult(
-            source_dataset=source_dataset,
-            target_dataset=target_dataset,
-            transformed_source=transformed_source,
-            transformed_target=transformed_target,
-            output_feature_names=output_feature_names,
-            metrics=metrics,
-            target_predictions=target_predictions,
-            target_actuals=target_actuals,
-            prediction_correctness=prediction_correctness,
-            preprocessed_source=source_features,
-            preprocessed_target=target_features,
-            alignment=alignment,
-            negative_transfer=negative_transfer,
-            started_at=started_at,
-            completed_at=datetime.now(),
-            duration_seconds=max(
-                0.0,
-                perf_counter()
-                - run_started
-                - (control.paused_seconds if control is not None else 0.0),
-            ),
-            adaptation_seconds=adaptation_seconds,
-        )
+            if control is not None:
+                control.checkpoint()
+            report(STAGE_ALIGNMENT, "MMD before vs. after adaptation")
+            alignment = self._measure_alignment(
+                source_features, target_features, transformed_source, transformed_target
+            )
+
+            report(STAGE_FINALIZING, "assembling results")
+            return TransferLearningResult(
+                source_dataset=source_dataset,
+                target_dataset=target_dataset,
+                transformed_source=transformed_source,
+                transformed_target=transformed_target,
+                output_feature_names=output_feature_names,
+                metrics=metrics,
+                target_predictions=target_predictions,
+                target_actuals=target_actuals,
+                prediction_correctness=prediction_correctness,
+                preprocessed_source=source_features,
+                preprocessed_target=target_features,
+                alignment=alignment,
+                negative_transfer=negative_transfer,
+                started_at=started_at,
+                completed_at=datetime.now(),
+                duration_seconds=max(
+                    0.0,
+                    perf_counter()
+                    - run_started
+                    - (control.paused_seconds if control is not None else 0.0),
+                ),
+                adaptation_seconds=adaptation_seconds,
+            )
 
     @staticmethod
     def _measure_alignment(

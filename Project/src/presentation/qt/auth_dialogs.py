@@ -15,7 +15,6 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -187,23 +186,41 @@ class AuthDialog(QDialog):
         email = self._login_email.text()
         password = self._login_password.text()
         if not email.strip() or not password:
-            message_box.warning(self, "Missing Information", "Enter your email and password.")
+            missing = "email address" if not email.strip() else "password"
+            message_box.warn(
+                self,
+                "Details Needed",
+                f"Enter your {missing} to log in.",
+            )
             return
         try:
             self._user = self._auth.login(email, password)
         except AuthenticationError as exc:
-            message_box.warning(self, "Could Not Log In", str(exc))
+            # The use case's own wording ("Incorrect email or password") is
+            # already the user-facing sentence, and it is deliberately vague
+            # about *which* was wrong — restating it here would either leak
+            # that or contradict it.
+            message_box.warn(self, "Login Failed", str(exc))
             return
-        except Exception as exc:  # noqa: BLE001 - surfaced verbatim
-            message_box.critical(self, "Database Error", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            message_box.error(
+                self,
+                "Login Unavailable",
+                "Couldn't reach the account database.",
+                "Your details weren't checked. Try again in a moment.",
+                technical=str(exc),
+            )
             return
         self.accept()
 
     def _do_register(self) -> None:
         password = self._register_password.text()
         if password != self._register_confirm.text():
-            message_box.warning(
-                self, "Passwords Do Not Match", "Re-type the same password twice."
+            message_box.warn(
+                self,
+                "Passwords Don't Match",
+                "The two passwords aren't the same.",
+                "Re-type the same password in both fields.",
             )
             return
         try:
@@ -214,10 +231,18 @@ class AuthDialog(QDialog):
                 role=self._register_role.currentData(),
             )
         except AuthenticationError as exc:
-            message_box.warning(self, "Could Not Register", str(exc))
+            # Same reasoning as login: the use case raises the sentence meant
+            # for the user ("An account with that email already exists").
+            message_box.warn(self, "Couldn't Create Account", str(exc))
             return
         except Exception as exc:  # noqa: BLE001
-            message_box.critical(self, "Database Error", str(exc))
+            message_box.error(
+                self,
+                "Registration Unavailable",
+                "Couldn't reach the account database.",
+                "Your account wasn't created. Try again in a moment.",
+                technical=str(exc),
+            )
             return
         self.accept()
 

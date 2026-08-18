@@ -111,6 +111,17 @@ class ExperimentCatalogUseCase:
         except ValueError:
             return None
 
+        # upsert_by_path dedupes on this exact string, so two spellings of
+        # the same file — a relative path from one working directory, an
+        # absolute path from another — must resolve to the same key or they
+        # register as two "different" datasets. resolve() is best-effort:
+        # a path that no longer exists (a stale registration) falls back to
+        # the literal string rather than raising.
+        try:
+            canonical_path = str(Path(path).expanduser().resolve())
+        except OSError:
+            canonical_path = str(path)
+
         class_names = _class_names(dataset.labels)
         record = DatasetRecord(
             name=Path(path).name,
@@ -123,7 +134,7 @@ class ExperimentCatalogUseCase:
             class_names=class_names,
             dtype_summary=_dtype_summary(dataset.dtypes),
             missing_value_count=dataset.missing_value_count,
-            source_path=str(path),
+            source_path=canonical_path,
         )
         return self._datasets.upsert_by_path(record)
 

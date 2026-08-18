@@ -216,15 +216,58 @@ class MainWindowRunMixin:
                 f"{count} files selected → {pair_count} ordered pairs will be run."
             )
 
-    def _run_transfer_learning(self) -> None:
-        # Guard against a stale reference: once the C++ QThread is deleted by
-        # deleteLater the Python wrapper raises RuntimeError on any method call.
+    # ------------------------------------------------------------------
+    # Busy guard
+    # ------------------------------------------------------------------
+    def _is_worker_busy(self) -> bool:
+        """Whether a background run is currently in flight.
+
+        Also clears a stale ``self._worker`` left over from a QThread whose
+        C++ object was already deleted by ``deleteLater`` — the Python
+        wrapper raises ``RuntimeError`` on any further method call once
+        that happens, so this is the one safe place to check it.
+        """
         try:
-            if self._worker is not None and self._worker.isRunning():
-                return
+            return self._worker is not None and self._worker.isRunning()
         except RuntimeError:
-            # C++ object already deleted – treat it as "not running".
             self._worker = None
+            return False
+
+    def _busy_description(self) -> str:
+        """Name whatever background run is in flight, for the message
+        ``_reject_if_busy`` shows. Reads the batch checkbox rather than
+        ``_last_run_kind`` because it must describe the run *in progress*,
+        and the checkbox is disabled (not reset) for the run's duration —
+        it still reflects what was actually started."""
+        if self._batch_mode_check.isChecked():
+            return "The batch experiment"
+        request = self._last_request
+        return f"The {request.method_name} experiment" if request is not None else "The experiment"
+
+    def _reject_if_busy(self, action: str) -> bool:
+        """Block *action* while a run is in flight, telling the user why.
+
+        Every entry point that does meaningful synchronous work on the UI
+        thread — a database round-trip, PDF rendering, starting a second
+        run — calls this first. Stacking that on top of the worker
+        thread's CPU-bound computation is what turns "a bit slow" into
+        "the whole app looks hung" (and, under enough load, can make the
+        rest of the desktop feel unresponsive too); saying so explicitly
+        beats a silent no-op the user is left to guess at.
+        """
+        if not self._is_worker_busy():
+            return False
+        message_box.info(
+            self,
+            "Experiment Running",
+            f"{self._busy_description()} is still running.",
+            f"Wait for it to finish before {action}, or press Cancel to stop it.",
+        )
+        return True
+
+    def _run_transfer_learning(self) -> None:
+        if self._reject_if_busy("starting another experiment"):
+            return
 
         if self._batch_mode_check.isChecked():
             self._run_batch_experiment()
@@ -237,32 +280,36 @@ class MainWindowRunMixin:
         target_path = source_path if combined else self._target_input.text().strip()
 
         if not source_path or (not combined and not target_path):
-            message_box.warning(
+            message_box.warn(
                 self,
-                "Missing Dataset",
-                "Select a dataset file before running."
+                "Dataset Needed",
+                "Pick a dataset file to run."
                 if combined
-                else "Select both a source and a target dataset before running.",
+                else "Pick a source and a target dataset to run.",
+                "Click a dataset field above to browse for a file.",
             )
             return
 
         missing = [p for p in {source_path, target_path} if not Path(p).is_file()]
         if missing:
-            message_box.warning(
+            message_box.warn(
                 self,
                 "Dataset Not Found",
-                "The following path is not a readable file:\n\n" + "\n".join(missing),
+                "One of the selected files couldn't be opened.",
+                "\n".join(missing)
+                + "\n\nIt may have been moved, renamed, or deleted since you picked it.",
             )
             return
 
         if combined and not self._use_case.dataset_has_combined_domains(source_path):
-            message_box.warning(
+            message_box.warn(
                 self,
                 "Not a Combined Dataset",
-                "This file does not appear to contain both a source and target "
-                "section (expected keys like X_src/Y_src alongside X_tar/Y_tar). "
-                "Uncheck \"Source and target are combined in one file\" and pick "
-                "separate source/target files instead.",
+                f"{Path(source_path).name} doesn't contain both domains.",
+                "A combined file needs a source and a target section side by side "
+                "(keys like X_src/Y_src alongside X_tar/Y_tar). Untick "
+                "“Source and target are combined in one file” and choose "
+                "two separate files instead.",
             )
             return
 
@@ -314,19 +361,26 @@ class MainWindowRunMixin:
         ]
 
         if len(file_paths) < 2:
-            message_box.warning(
+            message_box.warn(
                 self,
-                "Not Enough Files",
-                "Add at least two dataset files to run a batch.",
+                "More Files Needed",
+                "A batch needs at least two dataset files.",
+                "Batch mode runs every ordered pair, so two files give two runs "
+                "(A→B and B→A). Use “Add Files…” to choose more.",
             )
             return
 
         missing = [p for p in file_paths if not Path(p).is_file()]
         if missing:
-            message_box.warning(
+            count = len(missing)
+            message_box.warn(
                 self,
                 "Dataset Not Found",
-                "The following path is not a readable file:\n\n" + "\n".join(missing),
+                f"{count} of the batch files couldn't be opened."
+                if count > 1
+                else "One of the batch files couldn't be opened.",
+                "\n".join(missing)
+                + "\n\nRemove them from the list, or restore them and try again.",
             )
             return
 
@@ -500,13 +554,16 @@ class MainWindowRunMixin:
         # Recorded before the modal opens: exec_() blocks until dismissed, and
         # a failed configuration is worth keeping either way.
         self._record_run(None, error_message=message)
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Critical)
-        box.setWindowTitle("Experiment Failed")
-        box.setText("The transfer learning run could not be completed.")
-        box.setInformativeText(message)
-        install_title_bar_on_grid(box, "Experiment Failed")
-        box.exec_()
+        request = self._last_request
+        method = request.method_name if request is not None else "The method"
+        message_box.error(
+            self,
+            "Experiment Failed",
+            f"{method} couldn't finish this run.",
+            "Nothing was saved. Check that both datasets have the same number "
+            "of feature columns, then adjust the settings and run again.",
+            technical=message,
+        )
 
     def _on_batch_success(self, batch_result: BatchTransferLearningResult) -> None:
         self._last_batch_result = batch_result
@@ -575,23 +632,18 @@ class MainWindowRunMixin:
         not the same as deleting past work, and the History tab keeps
         showing it.
         """
-        if self._worker is not None and self._worker.isRunning():
-            message_box.warning(
-                self,
-                "Experiment Running",
-                "Cancel the running experiment before clearing the workspace.",
-            )
+        if self._reject_if_busy("clearing the workspace"):
             return
 
-        confirmed = message_box.question(
+        confirmed = message_box.confirm(
             self,
-            "Clear Everything",
-            "Reset all configuration fields and discard the results shown?\n\n"
-            "Experiments already saved to history are not affected.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            "Clear Workspace",
+            "Reset the settings and discard the results shown?",
+            "Experiments already saved to History are kept — this only clears "
+            "what's on screen.",
+            confirm_label="Clear",
         )
-        if confirmed != QMessageBox.Yes:
+        if not confirmed:
             return
 
         # State first: tearing down the results widgets re-emits selection
@@ -699,13 +751,17 @@ class MainWindowRunMixin:
     def _on_batch_error(self, message: str) -> None:
         self._set_status("Batch Failed", "danger")
         self._processing_strip.finish("Failed")
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Critical)
-        box.setWindowTitle("Batch Run Failed")
-        box.setText("The batch run could not be completed.")
-        box.setInformativeText(message)
-        install_title_bar_on_grid(box, "Batch Run Failed")
-        box.exec_()
+        # Distinct from a single pair failing: execute_batch records those
+        # per pair and still returns a result. Reaching here means the batch
+        # itself could not run, so no pair produced anything.
+        message_box.error(
+            self,
+            "Batch Failed",
+            "The batch couldn't be started.",
+            "No pairs were run. Check the file list and your settings, "
+            "then try again.",
+            technical=message,
+        )
 
     def _show_about(self) -> None:
         title = "About Adapta: Transfer Learning Studio"
