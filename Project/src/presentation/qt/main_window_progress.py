@@ -64,9 +64,14 @@ class MainWindowProgressMixin:
     def _set_running(self, running: bool) -> None:
         self._run_button.setEnabled(not running)
         self._run_action.setEnabled(not running)
-        running_label = "Running…"
-        idle_label = "Run Batch" if self._batch_mode_check.isChecked() else "Run Experiment"
-        self._run_button.setText(running_label if running else idle_label)
+        if running:
+            self._run_button.setText("Running…")
+        else:
+            # Through _sync_run_button_text rather than a second copy of the
+            # rule here: the label depends on both the batch and comparison
+            # toggles now, and a duplicate would silently go stale the next
+            # time a mode is added.
+            self._sync_run_button_text()
         self._progress_bar.setVisible(running)
         self._batch_mode_check.setEnabled(not running)
         self._combined_file_check.setEnabled(not running)
@@ -74,6 +79,15 @@ class MainWindowProgressMixin:
         self._remove_batch_file_button.setEnabled(not running)
         self._clear_batch_files_button.setEnabled(not running)
         self._clear_button.setEnabled(not running)
+        # Locked for the run's duration like the batch controls: the request
+        # was built from these, and letting them change mid-run would leave
+        # the sidebar describing something other than what is executing.
+        self._multi_method_check.setEnabled(
+            not running and not self._batch_mode_check.isChecked()
+        )
+        self._method_list.setEnabled(not running)
+        self._select_all_methods_button.setEnabled(not running)
+        self._clear_methods_button.setEnabled(not running)
 
         self._pause_button.setEnabled(running)
         self._pause_button.setText("Pause")

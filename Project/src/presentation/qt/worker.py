@@ -3,7 +3,11 @@ from __future__ import annotations
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
-from domain.models import BatchTransferLearningRequest, TransferLearningRequest
+from domain.models import (
+    BatchTransferLearningRequest,
+    MultiMethodTransferLearningRequest,
+    TransferLearningRequest,
+)
 from domain.run_control import RunCancelled, RunControl
 
 
@@ -79,3 +83,18 @@ class BatchTransferLearningWorker(_ProgressReportingWorker):
 
     def _execute(self):
         return self._use_case.execute_batch(self._request, control=self._control)
+
+
+class MultiMethodTransferLearningWorker(_ProgressReportingWorker):
+    """Several methods over one dataset pair, off the UI thread."""
+
+    def __init__(
+        self,
+        use_case: RunTransferLearningUseCase,
+        request: MultiMethodTransferLearningRequest,
+        control: RunControl | None = None,
+    ) -> None:
+        super().__init__(use_case, request, control)
+
+    def _execute(self):
+        return self._use_case.execute_multi_method(self._request, control=self._control)

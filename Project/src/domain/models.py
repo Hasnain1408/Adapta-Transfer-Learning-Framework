@@ -4,6 +4,8 @@ from typing import Optional
 
 import numpy as np
 
+from domain.ranking import average_metric_ranks
+
 
 @dataclass(frozen=True)
 class TransferLearningRequest:
@@ -168,6 +170,131 @@ class BatchTransferLearningRequest:
     latent_dim: int = 10
     mu: float = 1.0
     classifier: str = "k-NN"
+
+
+@dataclass(frozen=True)
+class MultiMethodTransferLearningRequest:
+    """Several methods against *one* dataset pair, in a single run.
+
+    The orthogonal axis to ``BatchTransferLearningRequest``: a batch varies
+    the datasets and holds the method fixed, this varies the method and
+    holds the datasets fixed. Everything except ``method_names`` is shared
+    across the methods, which is the point — a comparison is only worth
+    reading if the only thing that differed was the method.
+    """
+
+    method_names: list[str]
+    source_path: str
+    target_path: str
+    normalization: str = "None"
+    standardization: str = "None"
+    kernel_type: str = "linear"
+    regularization: float = 1.0
+    latent_dim: int = 10
+    mu: float = 1.0
+    classifier: str = "k-NN"
+
+
+@dataclass(frozen=True)
+class MethodTransferLearningResult:
+    """Outcome of one method within a multi-method run."""
+
+    method_name: str
+    result: Optional[TransferLearningResult] = None
+    error: Optional[str] = None
+
+    @property
+    def metrics(self) -> Optional[EvaluationMetrics]:
+        return self.result.metrics if self.result is not None else None
+
+
+@dataclass(frozen=True)
+class MultiMethodTransferLearningResult:
+    """Every method's outcome on the same pair, plus the one shared baseline.
+
+    ``baseline`` is computed once from the preprocessed features and is
+    therefore *the same number* for every method here, not one baseline per
+    method that happens to agree. That is what lets the per-method
+    ``accuracy_delta`` figures be compared against each other directly.
+    """
+
+    source_path: str
+    target_path: str
+    methods: list[MethodTransferLearningResult]
+    baseline: Optional[EvaluationMetrics] = None
+    #: True when the run was cancelled partway; ``methods`` then holds only
+    #: those that finished before the cancellation landed.
+    cancelled: bool = False
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    #: Wall clock for the whole run, including the loading and preprocessing
+    #: shared by every method — so it is well below the sum of what the same
+    #: methods would cost run one at a time.
+    duration_seconds: Optional[float] = None
+
+    @property
+    def evaluated(self) -> list["MethodTransferLearningResult"]:
+        """Only the methods that produced metrics, i.e. the comparable ones."""
+        return [entry for entry in self.methods if entry.metrics is not None]
+
+    def method_ranks(self) -> dict[str, float]:
+        """Mean rank per evaluated method across every metric. Lower is better.
+
+        Not accuracy alone. On the imbalanced datasets this app is usually
+        pointed at, a method whose classifier collapses onto the majority
+        class scores high on accuracy and zero on precision, recall, and F1
+        — ranking on accuracy would crown exactly the worst result in the
+        table. Averaging across metrics is the same rule the Comparison tab
+        applies to stored experiments, shared from ``domain.ranking``.
+        """
+        evaluated = self.evaluated
+        metric_rows = [
+            {
+                "accuracy": entry.metrics.accuracy,
+                "precision": entry.metrics.precision,
+                "recall": entry.metrics.recall,
+                "f1_score": entry.metrics.f1_score,
+                "auc": entry.metrics.auc,
+            }
+            for entry in evaluated
+        ]
+        averages = average_metric_ranks(metric_rows)
+        return {
+            entry.method_name: average
+            for entry, average in zip(evaluated, averages)
+            if average is not None
+        }
+
+    def ranked(self) -> list["MethodTransferLearningResult"]:
+        """Evaluated methods, best first.
+
+        Mean rank across metrics decides; accuracy breaks a tie, and
+        adaptation time breaks that — two methods scoring identically are
+        not equally good if one took ten times as long. Time is the method's
+        own ``adaptation_seconds``, not the whole run: loading and classifier
+        fitting cost the same whichever method was used and would only add
+        noise to the ordering.
+        """
+        ranks = self.method_ranks()
+
+        def sort_key(entry: "MethodTransferLearningResult") -> tuple[float, float, float]:
+            seconds = (
+                entry.result.adaptation_seconds
+                if entry.result is not None and entry.result.adaptation_seconds is not None
+                else float("inf")
+            )
+            return (
+                ranks.get(entry.method_name, float("inf")),
+                -entry.metrics.accuracy,
+                seconds,
+            )
+
+        return sorted(self.evaluated, key=sort_key)
+
+    @property
+    def best(self) -> Optional["MethodTransferLearningResult"]:
+        ranked = self.ranked()
+        return ranked[0] if ranked else None
 
 
 @dataclass(frozen=True)

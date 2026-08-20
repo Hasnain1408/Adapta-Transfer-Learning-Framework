@@ -31,6 +31,8 @@ from domain.entities import User
 from domain.models import (
     BatchTransferLearningRequest,
     BatchTransferLearningResult,
+    MultiMethodTransferLearningRequest,
+    MultiMethodTransferLearningResult,
     TransferLearningRequest,
     TransferLearningResult,
 )
@@ -89,9 +91,12 @@ class MainWindow(
         self._last_request: TransferLearningRequest | None = None
         self._last_batch_request: BatchTransferLearningRequest | None = None
         self._last_batch_result: BatchTransferLearningResult | None = None
-        #: "single" | "batch" | None — which of _last_result/_last_batch_result
-        #: is the one to export when the sidebar's Export Report is clicked.
+        self._last_multi_request: MultiMethodTransferLearningRequest | None = None
+        self._last_multi_result: MultiMethodTransferLearningResult | None = None
+        #: "single" | "batch" | "multi" | None — which of the _last_*_result
+        #: fields the sidebar's Export Report should build a report from.
         self._last_run_kind: str | None = None
+        self._method_results_tab_index = -1
         self._batch_results_tab_index = -1
         self._theme = "dark"
         self._palette = DARK_PALETTE
@@ -103,6 +108,10 @@ class MainWindow(
         #: id(pair) -> its open detail tab widget, same idea as above but for
         #: batch pairs, which have no persisted id to key on.
         self._pair_detail_tabs: dict[int, PairDetailView] = {}
+        #: id(method entry) -> its open detail tab, for one method of a
+        #: comparison. Keyed on the entry rather than the method name so two
+        #: comparisons in a row cannot collide on "TCA".
+        self._method_detail_tabs: dict[int, PairDetailView] = {}
 
         self.setWindowTitle("Adapta: Transfer Learning Studio")
         self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets" / "app_icon.svg")))

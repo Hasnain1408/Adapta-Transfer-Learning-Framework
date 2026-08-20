@@ -14,6 +14,11 @@ DATA_QSS = """/* ---------- Sidebar ---------- */
 QWidget#sidebar {
     background-color: transparent;
 }
+/* The scroll viewport would otherwise paint the default window colour
+   behind the parameter group and break the sidebar's transparency. */
+QScrollArea#sidebarScroll, QScrollArea#sidebarScroll > QWidget > QWidget {
+    background-color: transparent;
+}
 
 /* ---------- Metric cards ---------- */
 QFrame#metricCard {

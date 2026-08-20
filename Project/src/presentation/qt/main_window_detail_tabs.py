@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from domain.entities import ExperimentHistoryEntry
+from domain.models import PairTransferLearningResult
 from presentation.qt.experiment_detail_view import ExperimentDetailView
 from presentation.qt.pair_detail_view import PairDetailView
 
@@ -101,6 +102,66 @@ class MainWindowDetailTabsMixin:
         self._pair_detail_tabs[pair_key] = view
         self._results_tabs.setCurrentIndex(index)
 
+    def _open_method_detail_tab(self) -> None:
+        """Open (or raise) a tab for the method row selected in Method Results.
+
+        The table is ordered by rank, not by the order the methods ran, so
+        the row index is resolved through the same ranking the table used
+        rather than indexing into ``methods`` directly — otherwise clicking
+        the winner would open whichever method happened to run first.
+        """
+        multi_result = self._last_multi_result
+        if multi_result is None:
+            return
+        row = self._method_results_table.currentRow()
+        ordered = self._ranked_method_entries(multi_result)
+        if not (0 <= row < len(ordered)):
+            return
+        entry = ordered[row]
+        entry_key = id(entry)
+
+        existing = self._method_detail_tabs.get(entry_key)
+        if existing is not None:
+            index = self._results_tabs.indexOf(existing)
+            if index >= 0:
+                self._results_tabs.setCurrentIndex(index)
+                return
+            del self._method_detail_tabs[entry_key]
+
+        # PairDetailView already renders exactly this (metrics, predictions,
+        # charts, dataset summary) for a batch pair; a comparison entry is
+        # the same shape with a different identity, so it is wrapped rather
+        # than duplicated into a near-identical second view class.
+        pair = PairTransferLearningResult(
+            source_path=multi_result.source_path,
+            target_path=multi_result.target_path,
+            result=entry.result,
+            error=entry.error,
+        )
+        source_name = Path(multi_result.source_path).name
+        target_name = Path(multi_result.target_path).name
+        view = PairDetailView(
+            pair,
+            self._palette,
+            title=entry.method_name,
+            subtitle_prefix=f"{source_name} → {target_name}",
+        )
+        view.export_requested.connect(
+            lambda: self._export_method_report(entry, pair, view.chart_html())
+        )
+        index = self._results_tabs.addTab(view, entry.method_name)
+        self._method_detail_tabs[entry_key] = view
+        self._results_tabs.setCurrentIndex(index)
+
+    @staticmethod
+    def _ranked_method_entries(multi_result):
+        """Method entries in the order ``populate_method_results_table`` rows them."""
+        ranked = multi_result.ranked()
+        ranked_names = {entry.method_name for entry in ranked}
+        return ranked + [
+            entry for entry in multi_result.methods if entry.method_name not in ranked_names
+        ]
+
     def _close_results_tab(self, index: int) -> None:
         """Handle the tab strip's close button — only detail tabs have one.
 
@@ -120,15 +181,13 @@ class MainWindowDetailTabsMixin:
             widget.deleteLater()
             return
 
-        pair_key = next(
-            (key for key, view in self._pair_detail_tabs.items() if view is widget),
-            None,
-        )
-        if pair_key is None:
-            return
-        del self._pair_detail_tabs[pair_key]
-        self._results_tabs.removeTab(index)
-        widget.deleteLater()
+        for tracker in (self._pair_detail_tabs, self._method_detail_tabs):
+            key = next((k for k, view in tracker.items() if view is widget), None)
+            if key is not None:
+                del tracker[key]
+                self._results_tabs.removeTab(index)
+                widget.deleteLater()
+                return
 
 
 __all__ = ["MainWindowDetailTabsMixin"]

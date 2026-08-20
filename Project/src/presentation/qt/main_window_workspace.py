@@ -42,6 +42,8 @@ class MainWindowWorkspaceMixin:
         self._last_request = None
         self._last_batch_result = None
         self._last_batch_request = None
+        self._last_multi_result = None
+        self._last_multi_request = None
         self._last_run_kind = None
 
         self._reset_configuration()
@@ -60,6 +62,10 @@ class MainWindowWorkspaceMixin:
         # which is what re-enables the source/target fields the two modes hide.
         self._batch_mode_check.setChecked(False)
         self._combined_file_check.setChecked(False)
+        # Also fires _on_multi_method_toggled, which puts the method combo
+        # back in place of the checkable list.
+        self._multi_method_check.setChecked(False)
+        self._set_all_methods_checked(False)
 
         for combo, index in (
             (self._method_combo, 0),
@@ -109,6 +115,18 @@ class MainWindowWorkspaceMixin:
             "Run a batch to see per-pair results and the average across the batch."
         )
 
+        # Same signal hazard as the batch table above: this one's
+        # itemSelectionChanged opens a method-detail tab.
+        self._method_results_table.blockSignals(True)
+        self._method_results_table.clearContents()
+        self._method_results_table.setRowCount(0)
+        self._method_results_table.clearSelection()
+        self._method_results_table.setCurrentCell(-1, -1)
+        self._method_results_table.blockSignals(False)
+        self._method_summary_label.setText(
+            "Tick several methods in the sidebar to compare them on one dataset pair."
+        )
+
         self._summary_view.clear()
         self._charts_widget.clear()
         self._visualization_tab.clear()
@@ -119,6 +137,7 @@ class MainWindowWorkspaceMixin:
         self._export_button.setEnabled(False)
         self._export_action.setEnabled(False)
         self._batch_export_button.setEnabled(False)
+        self._method_export_button.setEnabled(False)
         self._results_fullscreen_button.setEnabled(False)
         # Back to the "No results yet" page of the stack.
         self._results_stack.setCurrentIndex(0)
@@ -130,7 +149,11 @@ class MainWindowWorkspaceMixin:
         open would strand the user on a tab about data the rest of the
         window no longer has.
         """
-        for registry in (self._experiment_detail_tabs, self._pair_detail_tabs):
+        for registry in (
+            self._experiment_detail_tabs,
+            self._pair_detail_tabs,
+            self._method_detail_tabs,
+        ):
             for view in list(registry.values()):
                 index = self._results_tabs.indexOf(view)
                 if index != -1:

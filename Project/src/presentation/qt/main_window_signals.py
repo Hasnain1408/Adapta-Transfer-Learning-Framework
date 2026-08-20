@@ -47,6 +47,16 @@ class MainWindowSignalsMixin:
         self._preprocessing_action.triggered.connect(lambda: self._open_learning_materials(3))
 
         self._method_combo.currentTextChanged.connect(self._sync_method_parameters)
+        self._multi_method_check.toggled.connect(self._on_multi_method_toggled)
+        self._method_list.itemChanged.connect(self._update_method_selection_caption)
+        self._select_all_methods_button.clicked.connect(
+            lambda: self._set_all_methods_checked(True)
+        )
+        self._clear_methods_button.clicked.connect(
+            lambda: self._set_all_methods_checked(False)
+        )
+        self._method_results_table.itemSelectionChanged.connect(self._open_method_detail_tab)
+        self._method_export_button.clicked.connect(self._export_multi_method_report)
         self._incorrect_only_check.toggled.connect(self._on_prediction_filter_toggled)
         self._correct_only_check.toggled.connect(self._on_prediction_filter_toggled)
         self._results_fullscreen_button.clicked.connect(self._open_results_fullscreen)

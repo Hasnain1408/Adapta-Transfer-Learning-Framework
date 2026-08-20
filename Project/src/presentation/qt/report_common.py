@@ -43,6 +43,13 @@ PAGE_HEAD = (
     "th, td { border: 1px solid #dde2e8; padding: 5px 7px; text-align: left; }"
     "th { background-color: #eef1f4; font-size: 9pt; }"
     "td.num { text-align: right; }"
+    # For tables with more columns than the default padding leaves room for.
+    # At 5px/7px padding a nine-column table on A4 has ~48pt of content
+    # width per column, which is under what "Precision" needs as a header
+    # and what "0.2410" needs as a value -- both then wrap mid-word. Tighter
+    # padding and a smaller face buy back roughly 25pt per column, which is
+    # the difference between a readable row and a broken one.
+    "table.compact th, table.compact td { padding: 3px 4px; font-size: 8.5pt; }"
     "</style></head><body>"
 )
 

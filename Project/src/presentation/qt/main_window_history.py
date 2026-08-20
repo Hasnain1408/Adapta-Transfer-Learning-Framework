@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import QTabBar
 from domain.entities import ExperimentRecord
 from domain.models import (
     BatchTransferLearningResult,
+    MultiMethodTransferLearningResult,
     TransferLearningRequest,
     TransferLearningResult,
 )
@@ -105,6 +106,39 @@ class MainWindowHistoryMixin:
                 classifier=shared.classifier,
             )
             self._persist_run(pair_request, pair.result, pair.error)
+
+        self._history_tab.refresh()
+        self._comparison_tab.refresh()
+
+    def _record_multi_method_run(
+        self, multi_result: MultiMethodTransferLearningResult
+    ) -> None:
+        """Persist each method of a comparison as its own experiment row.
+
+        Same treatment a batch gives its pairs: a comparison is a
+        convenience for running several experiments under identical
+        conditions, not a different kind of thing to store. Recording them
+        individually is also what lets the database-backed Comparison tab
+        pick them up afterwards.
+        """
+        shared = self._last_multi_request
+        if shared is None:
+            return
+
+        for entry in multi_result.methods:
+            method_request = TransferLearningRequest(
+                method_name=entry.method_name,
+                source_path=multi_result.source_path,
+                target_path=multi_result.target_path,
+                normalization=shared.normalization,
+                standardization=shared.standardization,
+                kernel_type=shared.kernel_type,
+                regularization=shared.regularization,
+                latent_dim=shared.latent_dim,
+                mu=shared.mu,
+                classifier=shared.classifier,
+            )
+            self._persist_run(method_request, entry.result, entry.error)
 
         self._history_tab.refresh()
         self._comparison_tab.refresh()

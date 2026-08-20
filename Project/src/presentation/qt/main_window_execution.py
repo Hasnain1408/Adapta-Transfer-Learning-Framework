@@ -11,21 +11,31 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMessageBox
 
 from domain.models import (
     BatchTransferLearningRequest,
     BatchTransferLearningResult,
+    MultiMethodTransferLearningRequest,
+    MultiMethodTransferLearningResult,
     TransferLearningRequest,
     TransferLearningResult,
 )
 from domain.run_control import RunControl
 from presentation.qt import message_box
 from presentation.qt.duration import format_duration
-from presentation.qt.result_tables import populate_batch_results_table
+from presentation.qt.result_tables import (
+    populate_batch_results_table,
+    populate_method_results_table,
+)
 from presentation.qt.style import build_style_sheet
 from presentation.qt.title_bar import install_title_bar_on_grid
-from presentation.qt.worker import BatchTransferLearningWorker, TransferLearningWorker
+from presentation.qt.worker import (
+    BatchTransferLearningWorker,
+    MultiMethodTransferLearningWorker,
+    TransferLearningWorker,
+)
 
 
 class MainWindowExecutionMixin:
@@ -34,25 +44,91 @@ class MainWindowExecutionMixin:
     # ------------------------------------------------------------------
     # Configuration state
     # ------------------------------------------------------------------
+    def _on_multi_method_toggled(self, checked: bool) -> None:
+        """Swap the method combo for the checkable list, and back."""
+        self._method_combo.setVisible(not checked)
+        self._method_selection_widget.setVisible(checked)
+        self._method_label.setText("Methods" if checked else "Method")
+        if checked:
+            # Carry the single-method choice across, so ticking the box
+            # extends the current selection rather than discarding it.
+            current = self._method_combo.currentData()
+            for row in range(self._method_list.count()):
+                item = self._method_list.item(row)
+                if item.data(Qt.UserRole) == current and item.checkState() != Qt.Checked:
+                    item.setCheckState(Qt.Checked)
+        self._update_method_selection_caption()
+        self._sync_run_button_text()
+
+    def _sync_run_button_text(self) -> None:
+        if self._batch_mode_check.isChecked():
+            self._run_button.setText("Run Batch")
+        elif self._multi_method_check.isChecked():
+            self._run_button.setText("Run Comparison")
+        else:
+            self._run_button.setText("Run Experiment")
+
+    def _set_all_methods_checked(self, checked: bool) -> None:
+        state = Qt.Checked if checked else Qt.Unchecked
+        for row in range(self._method_list.count()):
+            self._method_list.item(row).setCheckState(state)
+        self._update_method_selection_caption()
+
+    def _update_method_selection_caption(self) -> None:
+        """Say how many methods are ticked, and what that will actually do."""
+        names = self.selected_method_names()
+        if len(names) >= 2:
+            self._method_selection_caption.setText(
+                f"{len(names)} methods will run on the same pair and be ranked."
+            )
+        elif len(names) == 1:
+            self._method_selection_caption.setText(
+                f"Only {names[0]} is ticked — tick at least one more to compare."
+            )
+        else:
+            self._method_selection_caption.setText("Tick 2+ methods to compare them.")
+        self._sync_method_parameters()
+
     def _sync_method_parameters(self) -> None:
-        """Grey out parameters the selected method does not consume."""
-        method_name = self._method_combo.currentText()
-        supported = self._use_case.supported_parameters(method_name)
+        """Grey out parameters the selected method(s) do not consume.
+
+        In comparison mode a control stays enabled if *any* ticked method
+        reads it: the value is shared across the run, and greying it out
+        because one of five methods ignores it would hide a control the
+        other four obey.
+        """
+        method_names = self._active_method_names()
+        supported: set[str] = set()
+        for name in method_names:
+            supported |= self._use_case.supported_parameters(name)
+
+        if len(method_names) == 1:
+            unused_note = f"{method_names[0]} does not use this parameter."
+        else:
+            unused_note = "None of the ticked methods use this parameter."
 
         for field, (label, widget) in self._tunable_controls.items():
             enabled = field in supported
             label.setEnabled(enabled)
             widget.setEnabled(enabled)
-            widget.setToolTip(
-                self._tunable_tooltips[field]
-                if enabled
-                else f"{method_name} does not use this parameter."
-            )
+            widget.setToolTip(self._tunable_tooltips[field] if enabled else unused_note)
 
         self._update_context_label()
 
+    def _active_method_names(self) -> list[str]:
+        """Whichever method selection the next run would actually use."""
+        if self._multi_method_check.isChecked():
+            return self.selected_method_names()
+        return [self._method_combo.currentText()]
+
     def _update_context_label(self) -> None:
-        method_name = self._method_combo.currentText()
+        names = self._active_method_names()
+        if not names:
+            method_name = "No method selected"
+        elif len(names) == 1:
+            method_name = names[0]
+        else:
+            method_name = f"{len(names)} methods"
         parts = [method_name]
         if self._kernel_combo.isEnabled():
             parts.append(f"{self._kernel_combo.currentText()} kernel")
@@ -89,10 +165,19 @@ class MainWindowExecutionMixin:
 
         if self._batch_mode_check.isChecked():
             self._run_batch_experiment()
+        elif self._multi_method_check.isChecked():
+            self._run_multi_method_experiment()
         else:
             self._run_single_experiment()
 
-    def _run_single_experiment(self) -> None:
+    def _validated_single_pair(self) -> tuple[str, str] | None:
+        """The chosen source/target paths, or ``None`` after explaining why not.
+
+        Shared by the single-method and multi-method paths — they take the
+        same two files and differ only in what they do with them, so a
+        divergence in the checks would mean one path accepting a pair the
+        other rejects.
+        """
         source_path = self._source_input.text().strip()
         combined = self._combined_file_check.isChecked()
         target_path = source_path if combined else self._target_input.text().strip()
@@ -106,7 +191,7 @@ class MainWindowExecutionMixin:
                 else "Pick a source and a target dataset to run.",
                 "Click a dataset field above to browse for a file.",
             )
-            return
+            return None
 
         missing = [p for p in {source_path, target_path} if not Path(p).is_file()]
         if missing:
@@ -117,7 +202,7 @@ class MainWindowExecutionMixin:
                 "\n".join(missing)
                 + "\n\nIt may have been moved, renamed, or deleted since you picked it.",
             )
-            return
+            return None
 
         if combined and not self._use_case.dataset_has_combined_domains(source_path):
             message_box.warn(
@@ -129,7 +214,22 @@ class MainWindowExecutionMixin:
                 "“Source and target are combined in one file” and choose "
                 "two separate files instead.",
             )
+            return None
+
+        return source_path, target_path
+
+    def _pair_caption(self, source_path: str, target_path: str) -> str:
+        """"a.csv → b.csv", or just the filename in combined-file mode where
+        both halves come from one file and an arrow would look like a bug."""
+        if self._combined_file_check.isChecked():
+            return Path(source_path).name
+        return f"{Path(source_path).name} → {Path(target_path).name}"
+
+    def _run_single_experiment(self) -> None:
+        paths = self._validated_single_pair()
+        if paths is None:
             return
+        source_path, target_path = paths
 
         request = TransferLearningRequest(
             method_name=self._method_combo.currentText(),
@@ -150,14 +250,9 @@ class MainWindowExecutionMixin:
 
         self._set_running(True)
         self._set_status("Starting…", "warning")
-        # In combined-file mode both halves come from the same file, so
-        # "a.mat → a.mat" would just look like a bug.
-        names = (
-            Path(source_path).name
-            if combined
-            else f"{Path(source_path).name} → {Path(target_path).name}"
+        self._processing_strip.start(
+            f"{request.method_name}  ·  {self._pair_caption(source_path, target_path)}"
         )
-        self._processing_strip.start(f"{request.method_name}  ·  {names}")
 
         self._run_control = RunControl()
         self._worker = TransferLearningWorker(self._use_case, request, control=self._run_control)
@@ -169,6 +264,75 @@ class MainWindowExecutionMixin:
         # Null out the Python reference *before* the C++ object is scheduled
         # for deletion, so the next call to _run_transfer_learning finds None
         # instead of a dangling wrapped object.
+        self._worker.finished.connect(lambda: setattr(self, "_worker", None))
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.start()
+
+    def selected_method_names(self) -> list[str]:
+        """The ticked methods, in the order the list shows them.
+
+        Registration order, not click order — a comparison that reordered
+        itself depending on which box the user happened to tick first would
+        make two runs of the same set look like different experiments.
+        """
+        return [
+            self._method_list.item(row).data(Qt.UserRole)
+            for row in range(self._method_list.count())
+            if self._method_list.item(row).checkState() == Qt.Checked
+        ]
+
+    def _run_multi_method_experiment(self) -> None:
+        paths = self._validated_single_pair()
+        if paths is None:
+            return
+        source_path, target_path = paths
+
+        method_names = self.selected_method_names()
+        if len(method_names) < 2:
+            message_box.warn(
+                self,
+                "More Methods Needed",
+                "Tick at least two methods to compare."
+                if method_names
+                else "No methods are ticked.",
+                "A comparison needs something to compare against. Tick two or "
+                "more in the sidebar, or untick “Compare several methods” to "
+                "run just one.",
+            )
+            return
+
+        request = MultiMethodTransferLearningRequest(
+            method_names=method_names,
+            source_path=source_path,
+            target_path=target_path,
+            normalization=self._norm_combo.currentData(),
+            standardization=self._std_combo.currentData(),
+            kernel_type=self._kernel_combo.currentData(),
+            regularization=self._reg_input.value(),
+            latent_dim=self._dim_input.value(),
+            mu=self._mu_input.value(),
+            classifier=self._classifier_combo.currentData(),
+        )
+
+        # Kept so the completion handler can record each method as its own
+        # experiment, even if the user edits the form while the worker runs.
+        self._last_multi_request = request
+
+        self._set_running(True)
+        self._set_status(f"Starting comparison ({len(method_names)} methods)…", "warning")
+        self._processing_strip.start(
+            f"{len(method_names)} methods  ·  {self._pair_caption(source_path, target_path)}"
+        )
+
+        self._run_control = RunControl()
+        self._worker = MultiMethodTransferLearningWorker(
+            self._use_case, request, control=self._run_control
+        )
+        self._worker.progress.connect(self._on_progress)
+        self._worker.succeeded.connect(self._on_multi_method_success)
+        self._worker.failed.connect(self._on_multi_method_error)
+        self._worker.cancelled.connect(self._on_cancelled)
+        self._worker.finished.connect(lambda: self._set_running(False))
         self._worker.finished.connect(lambda: setattr(self, "_worker", None))
         self._worker.finished.connect(self._worker.deleteLater)
         self._worker.start()
@@ -339,6 +503,93 @@ class MainWindowExecutionMixin:
             self._results_tabs.setCurrentIndex(self._batch_results_tab_index)
         self._record_batch_run(batch_result)
         self._comparison_tab.refresh()
+
+    def _on_multi_method_success(
+        self, multi_result: MultiMethodTransferLearningResult
+    ) -> None:
+        self._last_multi_result = multi_result
+        self._last_run_kind = "multi"
+
+        evaluated = len(multi_result.evaluated)
+        failed = sum(1 for entry in multi_result.methods if entry.result is None)
+        if multi_result.cancelled:
+            status = f"Comparison cancelled ({len(multi_result.methods)} method(s) completed)"
+            status_key = "neutral"
+        elif failed:
+            status = f"Comparison completed ({failed} method(s) failed)"
+            status_key = "warning"
+        else:
+            status = "Comparison completed"
+            status_key = "success"
+        elapsed = format_duration(multi_result.duration_seconds)
+        if elapsed:
+            status += f" in {elapsed}"
+        self._set_status(status, status_key)
+        self._processing_strip.finish(
+            "Cancelled" if multi_result.cancelled else "Completed"
+        )
+
+        self._export_button.setEnabled(True)
+        self._export_action.setEnabled(True)
+        self._method_export_button.setEnabled(True)
+
+        # The winner's own result drives every single-result view, so the
+        # charts, feature space, predictions and summary all describe the
+        # method the table just named best. Any other choice would put a
+        # different method's numbers under a table that says "TCA won".
+        best = multi_result.best
+        if best is not None and best.result is not None:
+            self._last_result = best.result
+            self._show_metrics(best.result.metrics, self._timing_note(best.result))
+            if best.result.metrics is not None:
+                self._counts_label.setText(
+                    f"Best of {evaluated} compared methods: {best.method_name}  ·  "
+                    f"{best.result.metrics.total_samples} target samples  ·  "
+                    f"{best.result.metrics.correct_predictions} correct  ·  "
+                    f"{best.result.metrics.wrong_predictions} incorrect"
+                )
+            self._show_dataset_summary(best.result)
+            self._show_predictions(best.result)
+            self._show_transformed_features(best.result)
+            self._charts_widget.update_result(best.result)
+            self._visualization_tab.update_result(
+                best.result,
+                method_name=best.method_name,
+                source_name=Path(multi_result.source_path).name,
+                target_name=Path(multi_result.target_path).name,
+            )
+        else:
+            self._show_metrics(None)
+
+        summary_text = populate_method_results_table(
+            self._method_results_table, multi_result, self._palette
+        )
+        if multi_result.cancelled:
+            summary_text = "Cancelled before the remaining methods ran. " + summary_text
+        self._method_summary_label.setText(summary_text)
+
+        self._results_fullscreen_button.setEnabled(True)
+        self._results_stack.setCurrentIndex(1)
+        if self._method_results_tab_index >= 0:
+            self._results_tabs.setCurrentIndex(self._method_results_tab_index)
+        self._update_context_label()
+        self._record_multi_method_run(multi_result)
+        self._comparison_tab.refresh()
+
+    def _on_multi_method_error(self, message: str) -> None:
+        self._set_status("Comparison Failed", "danger")
+        self._processing_strip.finish("Failed")
+        # Distinct from one method failing: execute_multi_method records
+        # those against the method and still returns a result. Reaching here
+        # means the shared preparation failed, so no method ever ran.
+        message_box.error(
+            self,
+            "Comparison Failed",
+            "The comparison couldn't be started.",
+            "No method was run. The datasets couldn't be loaded or preprocessed — "
+            "check that both files are readable and have matching feature columns.",
+            technical=message,
+        )
 
     def _on_batch_error(self, message: str) -> None:
         self._set_status("Batch Failed", "danger")

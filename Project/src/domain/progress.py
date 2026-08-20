@@ -27,12 +27,17 @@ STAGE_BASELINE = "Baseline"
 STAGE_ALIGNMENT = "Measuring alignment"
 STAGE_FINALIZING = "Finalising"
 
+#: Baseline sits *before* adapting: it scores the preprocessed features
+#: with no adaptation at all, so it depends on nothing the method does. A
+#: multi-method run measures it once and reuses it for every method, which
+#: is only coherent if the pipeline agrees it happens first — and the UI
+#: renders this tuple in order, so the two must not disagree.
 SINGLE_RUN_STAGES: tuple[str, ...] = (
     STAGE_LOADING,
     STAGE_PREPROCESSING,
+    STAGE_BASELINE,
     STAGE_ADAPTING,
     STAGE_CLASSIFYING,
-    STAGE_BASELINE,
     STAGE_ALIGNMENT,
     STAGE_FINALIZING,
 )
@@ -60,9 +65,15 @@ class ProgressUpdate:
     #: the stage has no countable sub-steps (it is one blocking call).
     completed: int = 0
     total: int = 0
-    #: Which pair of a batch this belongs to; both 0 for a single run.
+    #: Which item of a multi-item run this belongs to; both 0 for a single
+    #: run. A batch counts dataset pairs, a multi-method run counts methods.
     pair_index: int = 0
     pair_total: int = 0
+    #: What ``pair_index`` counts, for the UI to put in front of it: "Pair
+    #: 3 of 12" or "Method 2 of 5". Carried as data rather than inferred
+    #: from the run kind, because ``execute`` — which emits most updates —
+    #: has no idea which kind of run it is part of.
+    unit_label: str = "Pair"
     #: Seconds of compute since the run started, excluding paused time.
     elapsed_seconds: float = 0.0
 

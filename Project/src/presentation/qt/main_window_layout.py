@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QTabBar,
@@ -85,7 +86,19 @@ class MainWindowLayoutMixin:
         return header
 
     def _build_sidebar(self) -> QWidget:
-        """Left-hand column: method/parameters and run actions."""
+        """Left-hand column: method/parameters (scrolling) and run actions (pinned).
+
+        The parameter group already wanted more height than this column has
+        at the window's default size, and comparison mode adds a method list
+        on top of that — so it scrolls rather than compressing every control
+        towards zero (which is what a plain QVBoxLayout does when it runs out
+        of room: the list collapsed to a single pixel).
+
+        The action row deliberately sits *outside* the scroll area. Run,
+        Pause, and Cancel must stay reachable no matter where the parameters
+        are scrolled to; a Cancel button you have to go looking for during a
+        long run is worse than no Cancel button at all.
+        """
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(320)
@@ -93,9 +106,16 @@ class MainWindowLayoutMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
 
-        layout.addWidget(self._build_parameter_group())
+        scroll = QScrollArea()
+        scroll.setObjectName("sidebarScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(self._build_parameter_group())
+
+        layout.addWidget(scroll, 1)
         layout.addLayout(self._build_action_row())
-        layout.addStretch(1)
         return sidebar
 
     def _build_content(self) -> QWidget:
@@ -198,8 +218,16 @@ class MainWindowLayoutMixin:
         self._dim_label = self._field_label("Latent Dimensions")
         self._mu_label = self._field_label("Mu (μ)")
 
+        layout.addWidget(self._method_label)
+        layout.addWidget(self._multi_method_check)
+        # One slot, two ways to fill it: the combo for a single method, the
+        # checkable list when comparing several. Swapped rather than shown
+        # side by side so there is never a question of which one the run
+        # will actually use.
+        layout.addWidget(self._method_combo)
+        layout.addWidget(self._build_method_selection_widget())
+
         rows = [
-            (self._method_label, self._method_combo),
             (self._classifier_label, self._classifier_combo),
             (self._kernel_label, self._kernel_combo),
             (self._norm_label, self._norm_combo),
@@ -224,6 +252,26 @@ class MainWindowLayoutMixin:
             field: widget.toolTip() for field, (_, widget) in self._tunable_controls.items()
         }
         return group
+
+    def _build_method_selection_widget(self) -> QWidget:
+        """The checkable method list, shown in place of the method combo."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._method_list)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(4)
+        buttons.addWidget(self._select_all_methods_button)
+        buttons.addWidget(self._clear_methods_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        layout.addWidget(self._method_selection_caption)
+
+        self._method_selection_widget = widget
+        widget.setVisible(False)
+        return widget
 
     def _build_action_row(self) -> QVBoxLayout:
         row = QVBoxLayout()
@@ -337,6 +385,16 @@ class MainWindowLayoutMixin:
         batch_layout.addLayout(batch_header)
         batch_layout.addWidget(self._batch_results_table, 1)
 
+        method_page = QWidget()
+        method_layout = QVBoxLayout(method_page)
+        method_layout.setContentsMargins(12, 10, 12, 12)
+        method_layout.setSpacing(8)
+        method_header = QHBoxLayout()
+        method_header.addWidget(self._method_summary_label, 1)
+        method_header.addWidget(self._method_export_button, 0, Qt.AlignTop)
+        method_layout.addLayout(method_header)
+        method_layout.addWidget(self._method_results_table, 1)
+
         self._charts_widget = AnalyticsChartsWidget(self._palette)
         self._visualization_tab = VisualizationTab(self._palette)
         self._comparison_tab = ComparisonTab(self._catalog, self._palette)
@@ -347,13 +405,17 @@ class MainWindowLayoutMixin:
         self._results_tabs.addTab(self._visualization_tab, "Feature Space")
         self._results_tabs.addTab(features_page, "Transformed Features")
         self._results_tabs.addTab(self._summary_view, "Dataset Summary")
+        # Named for what it holds — the methods of *this* run — to keep it
+        # distinct from "Comparison", which ranks across saved experiments.
+        self._results_tabs.addTab(method_page, "Method Results")
         self._results_tabs.addTab(batch_page, "Batch Results")
         self._results_tabs.addTab(self._comparison_tab, "Comparison")
         self._results_tabs.addTab(self._history_tab, "History")
+        self._method_results_tab_index = self._results_tabs.indexOf(method_page)
         self._batch_results_tab_index = self._results_tabs.indexOf(batch_page)
         self._history_tab_index = self._results_tabs.indexOf(self._history_tab)
 
-        # These eight are permanent — only dynamically opened experiment-detail
+        # These are all permanent — only dynamically opened experiment-detail
         # tabs (see _open_experiment_detail_tab) are meant to be closable.
         for index in range(self._results_tabs.count()):
             self._results_tabs.tabBar().setTabButton(index, QTabBar.RightSide, None)

@@ -53,6 +53,7 @@ class RunControl:
         self._last_emit = 0.0
         self._pair_index = 0
         self._pair_total = 0
+        self._unit_label = "Pair"
         #: Total seconds spent paused so far, so the timing the use case
         #: reports is compute cost and not "how long the user left it
         #: paused". Only whole pause/resume cycles land here; a pause still
@@ -124,15 +125,18 @@ class RunControl:
         with self._lock:
             self._listener = listener
 
-    def set_pair(self, index: int, total: int) -> None:
-        """Batch context stamped onto every subsequent update.
+    def set_pair(self, index: int, total: int, label: str = "Pair") -> None:
+        """Multi-item context stamped onto every subsequent update.
 
-        ``execute()`` has no idea it is one pair of a batch, so
-        ``execute_batch`` sets this instead of passing it down.
+        ``execute()`` has no idea it is one pair of a batch or one method of
+        a comparison, so the enclosing loop sets this instead of passing it
+        down. *label* names what is being counted ("Pair", "Method") so the
+        UI can caption it without knowing which loop is running.
         """
         with self._lock:
             self._pair_index = index
             self._pair_total = total
+            self._unit_label = label
 
     def report(self, stage: str, detail: str = "", completed: int = 0, total: int = 0) -> None:
         """Announce the step now starting. Never raises.
@@ -159,6 +163,7 @@ class RunControl:
                 total=total,
                 pair_index=self._pair_index,
                 pair_total=self._pair_total,
+                unit_label=self._unit_label,
                 # _paused_total, not the paused_seconds property: the lock
                 # is non-reentrant and already held here. Any open pause is
                 # excluded, which is harmless -- report() only runs after a

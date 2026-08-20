@@ -2,8 +2,11 @@
 
 The work is split across sibling modules, one per concern:
 
+- ``run_pipeline.py`` — the individual stages, shared by the paths below.
 - ``run_single_execution.py`` — the ``execute`` pipeline for one pair.
 - ``run_batch_execution.py`` — ``execute_batch``, fanning it over every pair.
+- ``run_multi_method_execution.py`` — ``execute_multi_method``, fanning it
+  over every *method* on one pair, sharing a single preparation.
 - ``run_tunables.py`` — which request fields a method actually accepts.
 - ``preprocessing.py`` — normalization/standardization transforms.
 - ``classification.py`` — classifier factory + fit/score evaluation.
@@ -16,12 +19,15 @@ and the small accessors the UI asks about before starting anything.
 from __future__ import annotations
 
 from application.run_batch_execution import RunBatchExecutionMixin
+from application.run_multi_method_execution import RunMultiMethodExecutionMixin
 from application.run_single_execution import RunSingleExecutionMixin
 from application.run_tunables import TUNABLE_PARAMETERS, supported_parameters_for
 from domain.interfaces import DatasetLoader, TransferLearningMethod
 
 
-class RunTransferLearningUseCase(RunSingleExecutionMixin, RunBatchExecutionMixin):
+class RunTransferLearningUseCase(
+    RunSingleExecutionMixin, RunBatchExecutionMixin, RunMultiMethodExecutionMixin
+):
     """Runs a transfer-learning method over a source/target dataset pair."""
 
     def __init__(self, loader: DatasetLoader, methods: list[TransferLearningMethod]) -> None:
@@ -58,6 +64,7 @@ class RunTransferLearningUseCase(RunSingleExecutionMixin, RunBatchExecutionMixin
 __all__ = [
     "TUNABLE_PARAMETERS",
     "RunBatchExecutionMixin",
+    "RunMultiMethodExecutionMixin",
     "RunSingleExecutionMixin",
     "RunTransferLearningUseCase",
 ]

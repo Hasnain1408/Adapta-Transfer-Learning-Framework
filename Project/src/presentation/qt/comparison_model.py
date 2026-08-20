@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from domain.entities import ExperimentHistoryEntry
+from domain.ranking import average_metric_ranks, competition_ranks
 
 #: ``(label, EvaluationRecord attribute)`` for every rankable score.
 METRICS: list[tuple[str, str]] = [
@@ -147,33 +148,6 @@ def _fmt(value: Optional[float], places: int = 4) -> str:
     return "—" if value is None else f"{value:.{places}f}"
 
 
-def competition_ranks(
-    values: list[Optional[float]], higher_is_better: bool = True
-) -> list[Optional[int]]:
-    """Standard competition ranking (1, 2, 2, 4) over *values*.
-
-    Ties share the better rank and consume the ones after it, which is what
-    "joint second" means in a results table. ``None`` inputs are unranked
-    (``None`` out) rather than ranked last: a method that never recorded a
-    metric has not lost on it, and sorting it to the bottom would silently
-    invent a comparison the data does not support.
-    """
-    scored = [(index, value) for index, value in enumerate(values) if value is not None]
-    scored.sort(key=lambda pair: pair[1], reverse=higher_is_better)
-
-    ranks: list[Optional[int]] = [None] * len(values)
-    previous_value: Optional[float] = None
-    previous_rank = 0
-    for position, (index, value) in enumerate(scored, start=1):
-        if previous_value is not None and value == previous_value:
-            ranks[index] = previous_rank
-        else:
-            ranks[index] = position
-            previous_rank = position
-            previous_value = value
-    return ranks
-
-
 def average_ranks(rows: list["MethodRow"]) -> dict[str, Optional[float]]:
     """Mean competition rank per method across every recorded metric.
 
@@ -182,29 +156,18 @@ def average_ranks(rows: list["MethodRow"]) -> dict[str, Optional[float]]:
     and averaging its per-metric ranks is the usual way results tables
     settle that. Each method is averaged only over the metrics it actually
     has, so a missing AUC costs nothing rather than counting as a loss.
+
+    The arithmetic itself is ``domain.ranking``'s, shared with the
+    multi-method run's own ranking so the two comparison surfaces cannot
+    disagree about which method won.
     """
-    if len(rows) == 1:
-        row = rows[0]
-        scored = any(row.value(attribute) is not None for _label, attribute in METRICS)
-        return {row.method: 1.0 if scored else None}
-
-    per_metric: dict[str, list[Optional[int]]] = {}
-    for _label, attribute in METRICS:
-        values = [row.value(attribute) for row in rows]
-        # A metric only one method recorded is not a contest — ranking it
-        # first there would hand it a win nothing else could compete for and
-        # drag its average down for free.
-        if sum(value is not None for value in values) < 2:
-            continue
-        per_metric[attribute] = competition_ranks(values)
-
-    overall: dict[str, Optional[float]] = {}
-    for index, row in enumerate(rows):
-        collected = [
-            ranks[index] for ranks in per_metric.values() if ranks[index] is not None
-        ]
-        overall[row.method] = (sum(collected) / len(collected)) if collected else None
-    return overall
+    metric_rows = [
+        {attribute: row.value(attribute) for _label, attribute in METRICS} for row in rows
+    ]
+    averages = average_metric_ranks(
+        metric_rows, tuple(attribute for _label, attribute in METRICS)
+    )
+    return {row.method: average for row, average in zip(rows, averages)}
 
 
 __all__ = [

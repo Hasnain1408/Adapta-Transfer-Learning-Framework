@@ -68,7 +68,14 @@ class MainWindowDatasetsMixin:
     def _on_batch_mode_toggled(self, checked: bool) -> None:
         self._single_dataset_widget.setVisible(not checked)
         self._batch_dataset_widget.setVisible(checked)
-        self._run_button.setText("Run Batch" if checked else "Run Experiment")
+        # Batch varies the datasets, multi-method varies the method; doing
+        # both at once is methods x pairs, which is a different feature with
+        # a different results shape. Batch wins the toggle because it is the
+        # one the user just asked for.
+        if checked and self._multi_method_check.isChecked():
+            self._multi_method_check.setChecked(False)
+        self._multi_method_check.setEnabled(not checked)
+        self._sync_run_button_text()
 
     def _add_batch_files(self) -> None:
         start_dir = str(Path.cwd())

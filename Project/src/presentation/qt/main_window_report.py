@@ -24,6 +24,7 @@ from presentation.qt.main_window_ui import KERNEL_OPTIONS
 from presentation.qt.report import (
     build_batch_report_html,
     build_history_report_html,
+    build_multi_method_report_html,
     build_report_html,
 )
 from presentation.qt.style import build_style_sheet
@@ -101,6 +102,56 @@ class MainWindowReportMixin:
         pair_count = len(request.file_paths) * (len(request.file_paths) - 1)
         rows.insert(2, ("Files in batch", str(len(request.file_paths))))
         rows.insert(3, ("Pairs run", str(pair_count)))
+        return rows
+
+    def _multi_method_config_rows(self) -> list[tuple[str, str]]:
+        """Config for a comparison: everything shared, with the method list
+        standing in for the single "Method" row."""
+        request = self._last_multi_request
+        if request is None:
+            return []
+        # Tunables are gated on what any *ticked* method consumes, matching
+        # what the sidebar left enabled — a row for a parameter no method in
+        # this run reads would be reporting a value nothing acted on.
+        supported: set[str] = set()
+        for name in request.method_names:
+            supported |= self._use_case.supported_parameters(name)
+
+        rows = [
+            ("Methods compared", ", ".join(request.method_names)),
+            ("Classifier", request.classifier),
+            ("Source dataset", Path(request.source_path).name),
+            ("Target dataset", Path(request.target_path).name),
+            ("Normalization", request.normalization),
+            ("Standardization", request.standardization),
+        ]
+        if "kernel_type" in supported:
+            rows.append(("Kernel", _KERNEL_LABELS.get(request.kernel_type, request.kernel_type)))
+        if "regularization" in supported:
+            rows.append(("Regularization (lambda)", f"{request.regularization:g}"))
+        if "latent_dim" in supported:
+            rows.append(("Latent dimensions", str(request.latent_dim)))
+        if "mu" in supported:
+            rows.append(("Mu", f"{request.mu:g}"))
+        return rows
+
+    def _method_entry_config_rows(self, entry) -> list[tuple[str, str]]:
+        """Config for one method opened out of a comparison."""
+        request = self._last_multi_request
+        if request is None:
+            return []
+        rows = self._config_rows_common(
+            entry.method_name,
+            request.classifier,
+            request.normalization,
+            request.standardization,
+            request.kernel_type,
+            request.regularization,
+            request.latent_dim,
+            request.mu,
+        )
+        rows.insert(2, ("Source dataset", Path(request.source_path).name))
+        rows.insert(3, ("Target dataset", Path(request.target_path).name))
         return rows
 
     def _pair_config_rows(self, pair: PairTransferLearningResult) -> list[tuple[str, str]]:
@@ -206,6 +257,8 @@ class MainWindowReportMixin:
         ``main_window_run.py``)."""
         if self._last_run_kind == "batch":
             self._export_batch_report()
+        elif self._last_run_kind == "multi":
+            self._export_multi_method_report()
         else:
             self._export_single_report()
 
@@ -258,6 +311,76 @@ class MainWindowReportMixin:
             batch_result, self._batch_report_config_rows(), self._performed_by(), sections
         )
         self._write_pdf_report(html, "Transfer_Learning_Batch_Report.pdf")
+
+    def _export_multi_method_report(self) -> None:
+        if self._reject_if_busy("exporting a report"):
+            return
+        multi_result = self._last_multi_result
+        if multi_result is None:
+            return
+        sections = self._pick_sections(
+            visualizations_available=False,
+            unavailable_reason=(
+                "A comparison has several results and no single one to chart — "
+                "open a method from Method Results and export its own report "
+                "for visualizations."
+            ),
+            alignment_available=any(
+                entry.result is not None and entry.result.alignment is not None
+                for entry in multi_result.methods
+            ),
+        )
+        if sections is None:
+            return
+        html = build_multi_method_report_html(
+            multi_result,
+            self._multi_method_config_rows(),
+            self._performed_by(),
+            sections,
+        )
+        source_name = Path(multi_result.source_path).stem
+        target_name = Path(multi_result.target_path).stem
+        self._write_pdf_report(
+            html, f"Method_Comparison_{source_name}_to_{target_name}.pdf"
+        )
+
+    def _export_method_report(self, entry, pair: PairTransferLearningResult, chart_html: str) -> None:
+        """Export one method of a comparison, from its detail tab.
+
+        Renders through ``build_report_html`` like any other single run —
+        the result really is one, it just happens to have been produced
+        alongside others.
+        """
+        if self._reject_if_busy("exporting a report"):
+            return
+        if pair.result is None:
+            message_box.warn(
+                self,
+                "Nothing to Export",
+                f"{entry.method_name} didn't produce a result.",
+                "It failed during the comparison, so there are no scores or "
+                "charts to put in a report. Pick a method marked OK instead.",
+            )
+            return
+        sections = self._pick_sections(
+            visualizations_available=True,
+            alignment_available=pair.result.alignment is not None
+            or pair.result.negative_transfer is not None,
+            predictions_available=pair.result.target_predictions is not None,
+        )
+        if sections is None:
+            return
+        html = build_report_html(
+            pair.result,
+            self._method_entry_config_rows(entry),
+            self._palette,
+            chart_html,
+            self._performed_by(),
+            sections,
+        )
+        self._write_pdf_report(
+            html, f"Transfer_Learning_Report_{entry.method_name}.pdf"
+        )
 
     def _export_pair_report(self, pair: PairTransferLearningResult, chart_html: str) -> None:
         """Export one batch pair's own report — used by ``PairDetailView``'s

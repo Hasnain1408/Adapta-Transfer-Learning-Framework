@@ -14,6 +14,8 @@ language in ``report_common.py`` (``PAGE_HEAD``/``page_header``):
   ``TransferLearningResult``).
 - :func:`build_batch_report_html` (``report_batch``) — every pair of a
   batch run at once.
+- :func:`build_multi_method_report_html` (``report_multi_method``) — every
+  method of one comparison run, ranked, against one dataset pair.
 - :func:`build_comparison_report_html` (``report_comparison``) — the
   stored-results comparison view.
 - :func:`build_history_report_html` (``report_history``) — a run replayed
@@ -33,6 +35,7 @@ from presentation.qt.report_batch import build_batch_report_html
 from presentation.qt.report_common import REPORT_IMAGE_WIDTH
 from presentation.qt.report_comparison import build_comparison_report_html
 from presentation.qt.report_history import build_history_report_html
+from presentation.qt.report_multi_method import build_multi_method_report_html
 from presentation.qt.report_single import build_report_html
 
 __all__ = [
@@ -40,5 +43,6 @@ __all__ = [
     "build_batch_report_html",
     "build_comparison_report_html",
     "build_history_report_html",
+    "build_multi_method_report_html",
     "build_report_html",
 ]

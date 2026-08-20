@@ -170,7 +170,7 @@ class ProcessingStatusStrip(QFrame):
 
         detail = update.detail
         if update.pair_total > 0:
-            prefix = f"Pair {update.pair_index} of {update.pair_total}"
+            prefix = f"{update.unit_label} {update.pair_index} of {update.pair_total}"
             detail = f"{prefix}  ·  {detail}" if detail else prefix
         self._render_caption(f"{update.stage} — {detail}" if detail else update.stage)
 

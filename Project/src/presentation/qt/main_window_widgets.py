@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSpinBox,
     QTableWidget,
@@ -24,7 +25,7 @@ from PyQt5.QtWidgets import (
 
 from presentation.qt.dataset_summary_view import DatasetSummaryView
 from presentation.qt.metric_card import MetricCard
-from presentation.qt.result_tables import BATCH_RESULTS_HEADERS
+from presentation.qt.result_tables import BATCH_RESULTS_HEADERS, METHOD_RESULTS_HEADERS
 from presentation.qt.ui_options import (
     CLASSIFIER_OPTIONS,
     KERNEL_OPTIONS,
@@ -89,6 +90,57 @@ class MainWindowWidgetsMixin:
         for name in self._use_case.method_names:
             self._method_combo.addItem(name, name)
         self._method_combo.setToolTip("Domain adaptation algorithm to apply")
+
+        self._multi_method_check = QCheckBox("Compare several methods on this pair")
+        self._multi_method_check.setToolTip(
+            "Runs each ticked method against the same source and target, with "
+            "identical preprocessing and one shared no-adaptation baseline, "
+            "then ranks them."
+        )
+
+        # Checkable list rather than a multi-select: a tick survives
+        # scrolling and mis-clicks, where a ctrl-click selection is one
+        # stray click away from being silently thrown out.
+        self._method_list = QListWidget()
+        self._method_list.setToolTip("Methods to run against this dataset pair")
+        self._method_list.setMaximumHeight(150)
+        for name in self._use_case.method_names:
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            item.setData(Qt.UserRole, name)
+            self._method_list.addItem(item)
+
+        self._select_all_methods_button = QPushButton("All")
+        self._clear_methods_button = QPushButton("None")
+        for button in (self._select_all_methods_button, self._clear_methods_button):
+            button.setObjectName("linkButton")
+            button.setCursor(Qt.PointingHandCursor)
+
+        self._method_selection_caption = QLabel("Tick 2+ methods to compare them.")
+        self._method_selection_caption.setObjectName("captionLabel")
+        self._method_selection_caption.setWordWrap(True)
+
+        self._method_results_table = self._build_table(list(METHOD_RESULTS_HEADERS))
+        self._align_headers(
+            self._method_results_table,
+            [Qt.AlignCenter, Qt.AlignLeft, Qt.AlignCenter]
+            + [Qt.AlignRight] * (len(METHOD_RESULTS_HEADERS) - 3),
+        )
+        self._method_summary_label = QLabel(
+            "Tick several methods in the sidebar to compare them on one dataset pair."
+        )
+        self._method_summary_label.setObjectName("captionLabel")
+        self._method_summary_label.setWordWrap(True)
+
+        # On the tab itself, not only in the sidebar, so it stays reachable
+        # from the full-screen results window.
+        self._method_export_button = QPushButton("Export Report…")
+        self._method_export_button.setCursor(Qt.PointingHandCursor)
+        self._method_export_button.setEnabled(False)
+        self._method_export_button.setToolTip(
+            "Export a PDF comparing every method in this run"
+        )
 
         self._kernel_combo = self._build_option_combo(
             KERNEL_OPTIONS, "Kernel used to build the Gram matrix"
