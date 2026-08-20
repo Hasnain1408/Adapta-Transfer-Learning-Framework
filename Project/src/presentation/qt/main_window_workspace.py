@@ -136,6 +136,7 @@ class MainWindowWorkspaceMixin:
         # The panel outlives a run on purpose (see _on_success), so a fresh
         # workspace is the one place it has to be taken down explicitly.
         self._processing_strip.clear()
+        self._fit_summary_pane()
 
         self._export_button.setEnabled(False)
         self._export_action.setEnabled(False)

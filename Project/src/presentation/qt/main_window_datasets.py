@@ -92,6 +92,9 @@ class MainWindowDatasetsMixin:
         self._dataset_group.style().polish(self._dataset_group)
         if collapsed:
             self._dataset_summary_label.setText(self._dataset_summary_text())
+        # Hand the height this just freed (or reclaimed) to the results pane
+        # rather than leaving it as blank space inside the splitter.
+        self._fit_summary_pane()
         self._dataset_toggle_button.setText("Show" if collapsed else "Hide")
         self._dataset_toggle_button.setToolTip(
             "Show the dataset fields again"

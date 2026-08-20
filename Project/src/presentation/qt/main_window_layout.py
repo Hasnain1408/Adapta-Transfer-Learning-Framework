@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSplitter,
     QStackedWidget,
     QTabBar,
     QTabWidget,
@@ -119,22 +120,61 @@ class MainWindowLayoutMixin:
         return sidebar
 
     def _build_content(self) -> QWidget:
-        """Right-hand column: datasets on top, metric cards below, then results."""
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(11)
+        """Right-hand column: a draggable split between summary and results.
 
-        layout.addWidget(self._build_dataset_group())
-        layout.addLayout(self._build_metrics_row())
-        layout.addWidget(self._counts_label)
+        Above the handle sits everything that describes the run — datasets,
+        metric cards, counts, the progress strip. Below it are the results.
+        A ``QSplitter`` rather than a fixed stretch factor because how much
+        room the results deserve is a judgement only the user can make: it
+        depends on which tab they are reading (a 700-row predictions table
+        wants the whole column; a four-value alignment panel does not).
+
+        Only the top pane is collapsible. Dragging the handle to the top
+        gives the results the entire column, and the results pane keeps a
+        minimum height so the tab strip can never be dragged out of reach —
+        which would leave no way to drag it back.
+        """
+        summary = QWidget()
+        summary_layout = QVBoxLayout(summary)
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.setSpacing(11)
+
+        summary_layout.addWidget(self._build_dataset_group())
+        summary_layout.addLayout(self._build_metrics_row())
+        summary_layout.addWidget(self._counts_label)
         # Hidden until a run starts, so an idle window looks the way it
         # always did and the strip's appearance is itself a signal. Placed
         # directly above the results it is about, and in the content column
         # rather than the sidebar because the sidebar has no spare height.
         self._processing_strip = ProcessingStatusStrip()
-        layout.addWidget(self._processing_strip)
-        layout.addWidget(self._build_results_stack(), 1)
+        summary_layout.addWidget(self._processing_strip)
+        # Keeps the block top-packed. Without it, a summary pane dragged
+        # taller than its content spreads the cards and captions apart down
+        # the whole pane instead of leaving the slack at the bottom.
+        summary_layout.addStretch(1)
+
+        self._content_splitter = QSplitter(Qt.Vertical)
+        self._content_splitter.setObjectName("contentSplitter")
+        self._content_splitter.setHandleWidth(10)
+        self._content_splitter.addWidget(summary)
+        self._content_splitter.addWidget(self._build_results_stack())
+        self._content_splitter.setCollapsible(0, True)
+        self._content_splitter.setCollapsible(1, False)
+        self._content_splitter.setStretchFactor(0, 0)
+        self._content_splitter.setStretchFactor(1, 1)
+        self._results_stack.setMinimumHeight(180)
+        self._summary_pane = summary
+        # Start the summary at exactly the height its content wants and give
+        # everything else to the results. The stretch factors above then hand
+        # any extra from a window resize to the results too, so a maximised
+        # window grows the table rather than the whitespace above it.
+        self._content_splitter.setSizes([summary.sizeHint().height(), 10_000])
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._content_splitter, 1)
         return content
 
     def _build_dataset_group(self) -> QGroupBox:
@@ -444,7 +484,16 @@ class MainWindowLayoutMixin:
             self._results_tabs.tabBar().setTabButton(index, QTabBar.RightSide, None)
         self._set_history_visible(self._current_user is not None)
 
-        self._results_tabs.setCornerWidget(self._results_fullscreen_button, Qt.TopRightCorner)
+        # Both size controls share the corner. They travel with the tab
+        # widget when it is reparented into the full-screen window, so the
+        # container is what gets hidden there rather than each button.
+        self._results_corner = QWidget()
+        corner = QHBoxLayout(self._results_corner)
+        corner.setContentsMargins(0, 0, 0, 0)
+        corner.setSpacing(6)
+        corner.addWidget(self._results_expand_button)
+        corner.addWidget(self._results_fullscreen_button)
+        self._results_tabs.setCornerWidget(self._results_corner, Qt.TopRightCorner)
         return self._results_tabs
 
     def _build_status_bar(self) -> None:

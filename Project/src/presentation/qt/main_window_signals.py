@@ -61,6 +61,12 @@ class MainWindowSignalsMixin:
         self._incorrect_only_check.toggled.connect(self._on_prediction_filter_toggled)
         self._correct_only_check.toggled.connect(self._on_prediction_filter_toggled)
         self._results_fullscreen_button.clicked.connect(self._open_results_fullscreen)
+        self._results_expand_button.clicked.connect(self._toggle_results_expanded)
+        # Dragging the handle changes the same state the button reports, so
+        # the label has to follow the drag as well as the click.
+        self._content_splitter.splitterMoved.connect(
+            lambda *_args: self._sync_results_expand_button()
+        )
         self._theme_toggle_button.clicked.connect(self._toggle_theme)
 
         self._logout_button.clicked.connect(self._handle_auth_button_clicked)

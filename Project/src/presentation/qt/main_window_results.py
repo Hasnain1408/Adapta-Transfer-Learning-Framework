@@ -112,6 +112,64 @@ class MainWindowResultsMixin:
             or self._last_batch_result is not None
         )
 
+    # ------------------------------------------------------------------
+    # Sizing the results pane
+    # ------------------------------------------------------------------
+    def _results_expanded(self) -> bool:
+        """Whether the summary pane above the results is currently shut."""
+        return self._content_splitter.sizes()[0] == 0
+
+    def _fit_summary_pane(self) -> None:
+        """Shrink the summary pane back to whatever its content now needs.
+
+        Called when the Datasets group collapses or expands. Without it the
+        splitter would keep handing the pane the height it had when the form
+        was open, so collapsing the group would free 167px into empty space
+        rather than into the results — which is the entire point of
+        collapsing it.
+
+        A pane the user has deliberately dragged shut (Expand) is left shut.
+        """
+        if self._results_expanded():
+            return
+        layout = self._summary_pane.layout()
+        if layout is not None:
+            layout.activate()
+        wanted = self._summary_pane.sizeHint().height()
+        total = sum(self._content_splitter.sizes())
+        wanted = min(wanted, max(0, total - self._results_stack.minimumHeight()))
+        self._content_splitter.setSizes([wanted, total - wanted])
+
+    def _toggle_results_expanded(self) -> None:
+        """Collapse the summary pane, or put it back where it was.
+
+        The pre-collapse height is remembered rather than recomputed, so
+        Restore returns to whatever split the user had dragged for
+        themselves instead of resetting it to a default they never chose.
+        """
+        splitter = self._content_splitter
+        if self._results_expanded():
+            restore = getattr(self, "_summary_pane_height", 0) or self._summary_pane.sizeHint().height()
+            total = sum(splitter.sizes())
+            # Never restore the summary to more than the column can show
+            # while leaving the results their minimum.
+            restore = min(restore, max(0, total - self._results_stack.minimumHeight()))
+            splitter.setSizes([restore, total - restore])
+        else:
+            self._summary_pane_height = splitter.sizes()[0]
+            splitter.setSizes([0, sum(splitter.sizes())])
+        self._sync_results_expand_button()
+
+    def _sync_results_expand_button(self) -> None:
+        expanded = self._results_expanded()
+        self._results_expand_button.setText("⌄" if expanded else "⌃")
+        self._results_expand_button.setToolTip(
+            "Bring back the datasets and metric cards above the results"
+            if expanded
+            else "Give the results the whole column (the summary above stays "
+            "one drag away)"
+        )
+
     def _open_results_fullscreen(self) -> None:
         """Move the whole results tab widget into a maximized window.
 
@@ -134,10 +192,11 @@ class MainWindowResultsMixin:
 
         origin_index = self._results_stack.indexOf(self._results_tabs)
         self._results_stack.removeWidget(self._results_tabs)
-        # The corner button travels with the tab widget (it's the same
-        # instance, just reparented) — hide it so a window already in full
-        # screen doesn't show a button to open full screen again.
-        self._results_fullscreen_button.hide()
+        # The corner travels with the tab widget (it's the same instance,
+        # just reparented) — hide it so a window already in full screen
+        # shows neither a button to open full screen again nor an Expand
+        # that would resize a splitter left behind in the main window.
+        self._results_corner.hide()
         win = FullScreenViewer(
             "Results", self._results_tabs, build_style_sheet(self._palette), parent=None
         )
@@ -151,7 +210,7 @@ class MainWindowResultsMixin:
             self._results_stack.insertWidget(origin_index, self._results_tabs)
             self._results_tabs.show()
             self._results_stack.setCurrentWidget(self._results_tabs)
-            self._results_fullscreen_button.show()
+            self._results_corner.show()
             self._results_window = None
 
         win.destroyed.connect(_restore)

@@ -281,6 +281,20 @@ class MainWindowWidgetsMixin:
             "Open the results tabs in a dedicated full-screen window"
         )
 
+        # One click for what dragging the splitter handle all the way up
+        # does — that drag is fiddly precisely at the extreme, which is the
+        # position most worth reaching. Glyph-only: it shares the tab strip's
+        # corner with Full Screen, and nine tabs already compete for that
+        # width. The tooltip carries the explanation.
+        self._results_expand_button = QPushButton("⌃")
+        self._results_expand_button.setObjectName("fullscreenButton")
+        self._results_expand_button.setCursor(Qt.PointingHandCursor)
+        self._results_expand_button.setFixedWidth(34)
+        self._results_expand_button.setToolTip(
+            "Give the results the whole column (the summary above stays one "
+            "drag away)"
+        )
+
         self._predictions_table = self._build_table(
             ["Sample", "Actual Label", "Predicted Label", "Result"]
         )

@@ -132,6 +132,23 @@ QFileDialog QToolButton:hover {
     background-color: $surface;
     border-color: $text_muted;
 }
+/* ---------- Content splitter ----------
+   The divider between the run summary and the results. Given a visible
+   grip rather than left as bare background: an unmarked 10px gap is a
+   control nobody discovers, and this one is the whole point of the split. */
+QSplitter#contentSplitter::handle:vertical {
+    background-color: transparent;
+    border-top: 1px solid $border;
+    margin: 4px 0;
+    height: 5px;
+}
+QSplitter#contentSplitter::handle:vertical:hover {
+    border-top: 2px solid $accent;
+}
+QSplitter#contentSplitter::handle:vertical:pressed {
+    border-top: 2px solid $accent_pressed;
+}
+
 QFileDialog QToolButton:pressed {
     background-color: $surface_sunken;
 }

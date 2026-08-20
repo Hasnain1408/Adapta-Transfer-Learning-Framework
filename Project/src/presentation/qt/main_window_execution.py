@@ -253,6 +253,8 @@ class MainWindowExecutionMixin:
         self._processing_strip.start(
             f"{request.method_name}  ·  {self._pair_caption(source_path, target_path)}"
         )
+        # The strip just appeared, so the summary pane needs more height.
+        self._fit_summary_pane()
 
         self._run_control = RunControl()
         self._worker = TransferLearningWorker(self._use_case, request, control=self._run_control)
@@ -323,6 +325,8 @@ class MainWindowExecutionMixin:
         self._processing_strip.start(
             f"{len(method_names)} methods  ·  {self._pair_caption(source_path, target_path)}"
         )
+        # The strip just appeared, so the summary pane needs more height.
+        self._fit_summary_pane()
 
         self._run_control = RunControl()
         self._worker = MultiMethodTransferLearningWorker(
@@ -386,6 +390,8 @@ class MainWindowExecutionMixin:
         self._set_running(True)
         self._set_status(f"Starting batch ({pair_count} pairs)…", "warning")
         self._processing_strip.start(f"{request.method_name}  ·  {pair_count} ordered pairs")
+        # The strip just appeared, so the summary pane needs more height.
+        self._fit_summary_pane()
 
         self._run_control = RunControl()
         self._worker = BatchTransferLearningWorker(self._use_case, request, control=self._run_control)
