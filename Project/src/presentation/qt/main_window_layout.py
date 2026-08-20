@@ -138,24 +138,47 @@ class MainWindowLayoutMixin:
         return content
 
     def _build_dataset_group(self) -> QGroupBox:
+        """The Datasets group, collapsible down to a one-line summary.
+
+        Its inputs matter right up until a run starts and stop mattering the
+        moment one finishes — at which point it is roughly 130px of form
+        sitting above the results the user actually came to read. Collapsing
+        it (see ``_set_datasets_collapsed``) hands that height to the results
+        stack, which is the only stretching widget in this column.
+        """
         group = QGroupBox("Datasets")
         outer = QVBoxLayout(group)
         outer.setSpacing(10)
 
-        outer.addWidget(self._batch_mode_check)
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        header.addWidget(self._dataset_summary_label, 1)
+        header.addWidget(self._dataset_toggle_button, 0, Qt.AlignRight)
+        outer.addLayout(header)
+
+        # Everything below the header lives in one widget so collapsing is a
+        # single setVisible rather than a list of children to keep in sync.
+        self._dataset_body = QWidget()
+        body = QVBoxLayout(self._dataset_body)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(10)
+
+        body.addWidget(self._batch_mode_check)
 
         self._single_dataset_widget = self._build_single_dataset_widget()
         self._batch_dataset_widget = self._build_batch_dataset_widget()
-        outer.addWidget(self._single_dataset_widget)
-        outer.addWidget(self._batch_dataset_widget)
+        body.addWidget(self._single_dataset_widget)
+        body.addWidget(self._batch_dataset_widget)
         self._batch_dataset_widget.setVisible(False)
 
         hint = QLabel(
             "Accepted formats: CSV, XLSX, ARFF (last column/attribute is the label) and MATLAB .mat"
         )
         hint.setObjectName("captionLabel")
-        outer.addWidget(hint)
+        body.addWidget(hint)
 
+        outer.addWidget(self._dataset_body)
+        self._dataset_group = group
         return group
 
     def _build_single_dataset_widget(self) -> QWidget:

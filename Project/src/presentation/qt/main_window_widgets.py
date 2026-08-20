@@ -62,6 +62,20 @@ class MainWindowWidgetsMixin:
             "detected and split automatically."
         )
 
+        # Shown only while the Datasets group is collapsed, so the section
+        # still says what it is configured with when its fields are hidden.
+        self._dataset_summary_label = QLabel()
+        self._dataset_summary_label.setObjectName("captionLabel")
+        self._dataset_summary_label.setWordWrap(False)
+        self._dataset_summary_label.hide()
+
+        self._dataset_toggle_button = QPushButton("Hide")
+        self._dataset_toggle_button.setObjectName("linkButton")
+        self._dataset_toggle_button.setCursor(Qt.PointingHandCursor)
+        self._dataset_toggle_button.setToolTip(
+            "Collapse the dataset fields to give the results more room"
+        )
+
         self._batch_mode_check = QCheckBox("Batch mode — run every ordered pair from multiple files")
         self._batch_mode_check.setToolTip(
             "Pick 2+ files; every ordered pair (A→B, A→C, B→A, ...) is run with "

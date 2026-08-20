@@ -57,6 +57,9 @@ class MainWindowWorkspaceMixin:
         self._source_input.clear()
         self._target_input.clear()
         self._clear_batch_files()
+        # A cleared workspace is about to be configured again, so the fields
+        # that configure it come back regardless of how the last run left them.
+        self._set_datasets_collapsed(False)
 
         # Unchecking these fires _on_batch_mode_toggled / _on_combined_file_toggled,
         # which is what re-enables the source/target fields the two modes hide.

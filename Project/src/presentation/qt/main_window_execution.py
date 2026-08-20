@@ -425,6 +425,11 @@ class MainWindowExecutionMixin:
 
         self._results_fullscreen_button.setEnabled(True)
 
+        # The dataset fields have done their job for this run; the height
+        # they occupy is worth more to the results below them. Only on
+        # success -- a failed run usually needs those fields corrected,
+        # so hiding them there would be exactly backwards.
+        self._set_datasets_collapsed(True)
         self._results_stack.setCurrentIndex(1)
         self._update_context_label()
         self._record_run(result, error_message=None)
@@ -498,6 +503,11 @@ class MainWindowExecutionMixin:
             summary_text = "Cancelled before the remaining pairs ran. " + summary_text
         self._batch_summary_label.setText(summary_text)
         self._results_fullscreen_button.setEnabled(True)
+        # The dataset fields have done their job for this run; the height
+        # they occupy is worth more to the results below them. Only on
+        # success -- a failed run usually needs those fields corrected,
+        # so hiding them there would be exactly backwards.
+        self._set_datasets_collapsed(True)
         self._results_stack.setCurrentIndex(1)
         if self._batch_results_tab_index >= 0:
             self._results_tabs.setCurrentIndex(self._batch_results_tab_index)
@@ -569,6 +579,11 @@ class MainWindowExecutionMixin:
         self._method_summary_label.setText(summary_text)
 
         self._results_fullscreen_button.setEnabled(True)
+        # The dataset fields have done their job for this run; the height
+        # they occupy is worth more to the results below them. Only on
+        # success -- a failed run usually needs those fields corrected,
+        # so hiding them there would be exactly backwards.
+        self._set_datasets_collapsed(True)
         self._results_stack.setCurrentIndex(1)
         if self._method_results_tab_index >= 0:
             self._results_tabs.setCurrentIndex(self._method_results_tab_index)

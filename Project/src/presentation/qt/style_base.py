@@ -175,6 +175,11 @@ QGroupBox {
     padding: 16px 16px 14px 16px;
     font-weight: 600;
 }
+/* Collapsed to a one-line summary (the Datasets group after a run): the
+   form-sized padding above would leave it looking mostly empty. */
+QGroupBox[collapsed="true"] {
+    padding: 8px 16px 8px 16px;
+}
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;

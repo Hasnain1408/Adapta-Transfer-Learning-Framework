@@ -17,6 +17,7 @@ class MainWindowSignalsMixin:
         self._swap_button.clicked.connect(self._swap_datasets)
         self._combined_file_check.toggled.connect(self._on_combined_file_toggled)
         self._batch_mode_check.toggled.connect(self._on_batch_mode_toggled)
+        self._dataset_toggle_button.clicked.connect(self._toggle_datasets_collapsed)
         self._add_batch_files_button.clicked.connect(self._add_batch_files)
         self._remove_batch_file_button.clicked.connect(self._remove_selected_batch_files)
         self._clear_batch_files_button.clicked.connect(self._clear_batch_files)
