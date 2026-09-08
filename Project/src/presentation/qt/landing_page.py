@@ -612,11 +612,12 @@ class LandingPage(QWidget):
         self._tagline.setWordWrap(True)
         column.addWidget(self._tagline)
 
-        self._blurb = QLabel(
-            "Six adaptation methods, five classifiers, and a record of every "
-            "run — with the alignment diagnostics to tell you whether the "
-            "adaptation actually helped."
-        )
+        # self._blurb = QLabel(
+        #     "Six adaptation methods, five classifiers, and a record of every "
+        #     "run — with the alignment diagnostics to tell you whether the "
+        #     "adaptation actually helped."
+        # )
+        self._blurb = QLabel(" ")
         self._blurb.setObjectName("landingBlurb")
         self._blurb.setWordWrap(True)
         column.addWidget(self._blurb)

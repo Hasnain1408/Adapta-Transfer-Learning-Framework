@@ -69,17 +69,12 @@ class MainWindowLayoutMixin:
         self.setCentralWidget(self._page_stack)
 
     def _build_header(self) -> QWidget:
-        """Workspace header: the way back to the landing page, then session controls."""
+        """Workspace header: session controls."""
         header = QWidget()
         layout = QHBoxLayout(header)
         layout.setContentsMargins(2, 0, 2, 2)
         layout.setSpacing(12)
 
-        mark = QLabel()
-        mark.setObjectName("brandMark")
-        mark.setFixedSize(34, 34)
-
-        layout.addWidget(self._home_button)
         layout.addStretch(1)
         layout.addWidget(self._user_label)
         layout.addWidget(self._logout_button)
@@ -87,18 +82,12 @@ class MainWindowLayoutMixin:
         return header
 
     def _build_sidebar(self) -> QWidget:
-        """Left-hand column: method/parameters (scrolling) and run actions (pinned).
+        """Left-hand column: method/parameters (fixed title, scrollable content) and run actions (pinned).
 
-        The parameter group already wanted more height than this column has
-        at the window's default size, and comparison mode adds a method list
-        on top of that — so it scrolls rather than compressing every control
-        towards zero (which is what a plain QVBoxLayout does when it runs out
-        of room: the list collapsed to a single pixel).
-
-        The action row deliberately sits *outside* the scroll area. Run,
-        Pause, and Cancel must stay reachable no matter where the parameters
-        are scrolled to; a Cancel button you have to go looking for during a
-        long run is worse than no Cancel button at all.
+        The QGroupBox title "Method and Parameters" is always visible at the
+        top of the sidebar. A QScrollArea inside the group box lets the
+        parameter controls scroll independently. The action row sits outside
+        the group box so Run/Pause/Cancel are always reachable.
         """
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
@@ -107,15 +96,22 @@ class MainWindowLayoutMixin:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
 
+        # QGroupBox provides the fixed title; content scrolls inside it.
+        params_group = QGroupBox("Method and Parameters")
+        params_group_layout = QVBoxLayout(params_group)
+        params_group_layout.setContentsMargins(0, 4, 0, 0)
+        params_group_layout.setSpacing(0)
+
         scroll = QScrollArea()
         scroll.setObjectName("sidebarScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setWidget(self._build_parameter_group())
+        scroll.setWidget(self._build_parameter_content())
+        params_group_layout.addWidget(scroll)
 
-        layout.addWidget(scroll, 1)
+        layout.addWidget(params_group, 1)
         layout.addLayout(self._build_action_row())
         return sidebar
 
@@ -265,9 +261,16 @@ class MainWindowLayoutMixin:
         layout.addWidget(self._batch_files_caption)
         return widget
 
-    def _build_parameter_group(self) -> QGroupBox:
-        group = QGroupBox("Method and Parameters")
-        layout = QVBoxLayout(group)
+    def _build_parameter_content(self) -> QWidget:
+        """Scrollable body of the Method and Parameters section.
+
+        Returns a plain QWidget (no QGroupBox wrapper) — the title and border
+        come from the QGroupBox in ``_build_sidebar``, which stays pinned
+        while this content scrolls.
+        """
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(9, 4, 9, 9)
         layout.setSpacing(8)
 
         # Single-column form: a field label above its control, stacked in the
@@ -299,9 +302,11 @@ class MainWindowLayoutMixin:
             (self._dim_label, self._dim_input),
             (self._mu_label, self._mu_input),
         ]
-        for label, widget in rows:
+        for label, ctrl in rows:
             layout.addWidget(label)
-            layout.addWidget(widget)
+            layout.addWidget(ctrl)
+
+        layout.addStretch(1)
 
         # Captured before any method may disable them, so the explanatory
         # tooltips can be restored when a method that uses them is selected.
@@ -312,9 +317,9 @@ class MainWindowLayoutMixin:
             "mu": (self._mu_label, self._mu_input),
         }
         self._tunable_tooltips = {
-            field: widget.toolTip() for field, (_, widget) in self._tunable_controls.items()
+            field: ctrl.toolTip() for field, (_, ctrl) in self._tunable_controls.items()
         }
-        return group
+        return container
 
     def _build_method_selection_widget(self) -> QWidget:
         """The checkable method list, shown in place of the method combo."""
@@ -339,7 +344,11 @@ class MainWindowLayoutMixin:
     def _build_action_row(self) -> QVBoxLayout:
         row = QVBoxLayout()
         row.setSpacing(8)
-        row.addWidget(self._run_button)
+        run_export_row = QHBoxLayout()
+        run_export_row.setSpacing(8)
+        run_export_row.addWidget(self._run_button)
+        run_export_row.addWidget(self._export_button)
+        row.addLayout(run_export_row)
 
         pause_cancel_row = QHBoxLayout()
         pause_cancel_row.setSpacing(8)
@@ -347,12 +356,11 @@ class MainWindowLayoutMixin:
         pause_cancel_row.addWidget(self._cancel_button)
         row.addLayout(pause_cancel_row)
 
-        row.addWidget(self._export_button)
-        row.addWidget(self._clear_button)
-        # Last, and spaced away from the rest, so it is never the button the
-        # hand lands on when reaching for Clear.
-        row.addSpacing(6)
-        row.addWidget(self._exit_button)
+        clear_exit_row = QHBoxLayout()
+        clear_exit_row.setSpacing(8)
+        clear_exit_row.addWidget(self._clear_button)
+        clear_exit_row.addWidget(self._exit_button)
+        row.addLayout(clear_exit_row)
         return row
 
     def _build_metrics_row(self) -> QHBoxLayout:

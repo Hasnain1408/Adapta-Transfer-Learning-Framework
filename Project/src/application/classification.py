@@ -29,7 +29,15 @@ def build_classifier(name: str):
     """Return a fitted-ready sklearn classifier for the given *name*."""
     name = name.strip()
     if name == "SVM":
-        return SVC(kernel="rbf", C=1.0, gamma="scale", probability=False)
+        # `probability` deliberately left unset: its default already behaves
+        # as False (no predict_proba, _roc_auc below falls back to
+        # decision_function), and passing `probability=False` explicitly
+        # triggers a FutureWarning under sklearn >=1.9 -- the parameter is
+        # being removed in 1.11, but only the *explicit* form is deprecated.
+        # Do not "fix" that warning by passing `probability=True`: it forces
+        # libsvm's internal 5-fold CV calibration, which is far slower to fit
+        # for no benefit this app uses (AUC only needs decision_function).
+        return SVC(kernel="rbf", C=1.0, gamma="scale")
     if name == "Random Forest":
         return RandomForestClassifier(n_estimators=100, random_state=42)
     if name == "Logistic Regression":

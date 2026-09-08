@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QAction, QVBoxLayout, QWidget
 
@@ -50,6 +51,8 @@ class MainWindowMenuMixin:
         self._refresh_history_action.setShortcut(QKeySequence("F5"))
         self._refresh_history_action.setEnabled(has_database)
         self._database_info_action = QAction("Connection &Info", self)
+
+        self.menuBar().setCornerWidget(self._home_button, Qt.TopLeftCorner)
 
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self._home_action)
