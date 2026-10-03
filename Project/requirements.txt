@@ -5,11 +5,17 @@ scikit-learn>=1.3.0
 openpyxl>=3.1.0
 scipy>=1.10.0
 matplotlib>=3.7.0
-# Caps BLAS/OpenMP thread counts during a run (see run_transfer_learning_use_case.py) --
-# already an implicit dependency of scikit-learn, declared explicitly since the
-# code now imports it directly rather than relying on it arriving transitively.
+
+# Caps BLAS/OpenMP thread counts during a run
 threadpoolctl>=3.1.0
-# PostgreSQL driver. The -binary wheel ships its own libpq, so no system
-# postgresql-dev package is needed to install it.
+
+# PostgreSQL driver
 psycopg2-binary>=2.9.9
+
+# Database ORM
+SQLAlchemy>=2.0.0
+
+# Load DATABASE_URL from .env
+python-dotenv>=1.0.0
+
 pyinstaller>=5.0.0

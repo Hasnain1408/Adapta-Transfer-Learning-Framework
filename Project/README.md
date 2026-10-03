@@ -123,6 +123,49 @@ python3 src/main.py
 Typical workflow: pick a method, use **Browse** to choose source and target
 datasets, tune the method's parameters, then click **Run Experiment**.
 
+### Build and launch the desktop app
+
+On Linux, create the self-contained executable with:
+
+```bash
+./build_desktop.sh
+```
+
+The executable is written to `dist/Adapta`. The build also copies it to
+`~/Desktop/Adapta` and creates a `~/Desktop/Adapta.desktop` launcher, so it can
+be started from the desktop. The launcher uses the supplied Adapta icon and
+starts with database support enabled. Start it manually with:
+
+```bash
+./dist/Adapta --no-database
+```
+
+The build installs the desktop launcher automatically. To install or refresh
+it separately after moving the project, run:
+
+```bash
+./install_desktop_entry.sh
+```
+
+The installer copies the executable and records its current desktop path, so
+run it again if the app is rebuilt or moved. The build uses
+[Adapta.spec](Adapta.spec), which bundles the Qt
+SVG assets and keeps the application console-free for normal desktop use.
+
+For the Desktop copy, put a `.env` file containing `DATABASE_URL` beside the
+executable at `~/Desktop/.env`. The app also accepts `DATABASE_URL` as an
+environment variable. Without database configuration, it starts offline and
+reports that persistence is unavailable.
+
+If the file manager says it cannot find a default application for
+`application/x-executable`, it is trying to open the binary as a document.
+Right-click `dist/Adapta`, choose **Properties**, enable **Allow executing file
+as program**, then choose **Run**. Starting it from a terminal also works:
+
+```bash
+./dist/Adapta --no-database
+```
+
 ### CLI Options
 
 | Flag | Effect |
