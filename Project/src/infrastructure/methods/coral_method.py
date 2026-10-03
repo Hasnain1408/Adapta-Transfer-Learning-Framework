@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 
 
 class CORALMethod(TransferLearningMethod):
@@ -18,7 +19,10 @@ class CORALMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         n_features = source_features.shape[1]
 
         # Calculate covariance matrices

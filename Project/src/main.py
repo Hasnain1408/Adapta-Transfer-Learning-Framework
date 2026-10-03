@@ -11,7 +11,11 @@ from PyQt5.QtWidgets import QApplication
 from application.authentication_use_case import AuthenticationUseCase
 from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
+from infrastructure.data.arff_dataset_loader import ARFFDatasetLoader
 from infrastructure.data.csv_dataset_loader import CSVDatasetLoader
+from infrastructure.data.dataset_loader import DatasetLoader
+from infrastructure.data.mat_dataset_loader import MATDatasetLoader
+from infrastructure.data.xlsx_dataset_loader import XLSXDatasetLoader
 from infrastructure.methods.tca_method import TCAMethod
 from infrastructure.methods.jda_method import JDAMethod
 from infrastructure.methods.coral_method import CORALMethod
@@ -21,6 +25,7 @@ from infrastructure.methods.dali_method import DALIMethod
 from infrastructure.methods.gfk_method import GFKMethod
 from infrastructure.methods.jgsa_method import JGSAMethod
 from infrastructure.methods.jcsl_method import JCSLMethod
+from infrastructure.methods.meda_method import MEDAMethod
 from infrastructure.persistence import (
     Database,
     DatabaseConfigError,
@@ -76,7 +81,9 @@ def build_window(
     auth: AuthenticationUseCase | None = None,
     database_error: str | None = None,
 ) -> MainWindow:
-    loader = CSVDatasetLoader()
+    loader = DatasetLoader(
+        [CSVDatasetLoader(), XLSXDatasetLoader(), MATDatasetLoader(), ARFFDatasetLoader()]
+    )
     methods = [
         TCAMethod(latent_dim=5, regularization=1.0, kernel_type="linear"),
         JDAMethod(latent_dim=5, regularization=1.0, kernel_type="linear", iterations=10),
@@ -87,6 +94,7 @@ def build_window(
         GFKMethod(latent_dim=10),
         JGSAMethod(latent_dim=10, regularization=1.0, beta=1.0, mu=1.0, iterations=10),
         JCSLMethod(latent_dim=10, regularization=0.01, subspace_weight=0.5, iterations=200),
+        MEDAMethod(latent_dim=20, regularization=1.0, kernel_type="rbf", rho=1.0, eta=0.1, iterations=10),
     ]
     use_case = RunTransferLearningUseCase(loader=loader, methods=methods)
     return MainWindow(

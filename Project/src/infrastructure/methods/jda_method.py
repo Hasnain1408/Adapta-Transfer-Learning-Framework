@@ -5,6 +5,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 
 
 class JDAMethod(TransferLearningMethod):
@@ -57,7 +58,10 @@ class JDAMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         ns = source_features.shape[0]
         nt = target_features.shape[0]
         n_samples = ns + nt
@@ -104,6 +108,9 @@ class JDAMethod(TransferLearningMethod):
         transformed_target = np.zeros((nt, dim))
 
         for it in range(iterations):
+            if control is not None:
+                control.checkpoint()
+                control.report_iteration(self.name, it + 1, iterations)
             # Compute conditional matrix Mc (N)
             N = np.zeros((n, n))
             if y_tar_pseudo is not None and len(y_tar_pseudo) == nt:

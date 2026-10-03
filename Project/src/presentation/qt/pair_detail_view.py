@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QTableWidget,
     QTabWidget,
@@ -47,20 +49,31 @@ def _build_table(headers: list[str]) -> QTableWidget:
 class PairDetailView(QWidget):
     """Read-only page combining one batch pair's predictions/charts/summary."""
 
+    export_requested = pyqtSignal()
+
     def __init__(
         self,
         pair: PairTransferLearningResult,
         palette: dict[str, str],
         parent: QWidget | None = None,
+        title: str | None = None,
+        subtitle_prefix: str = "",
     ) -> None:
+        """*title* and *subtitle_prefix* override the header for a reuse
+        where "source → target" is not the interesting identity — a method
+        of a comparison run, where every entry shares the same pair and the
+        *method* is what tells them apart."""
         super().__init__(parent)
         self._pair = pair
         self._palette = palette
+        self._title = title
+        self._subtitle_prefix = subtitle_prefix
+        self._charts_widget: AnalyticsChartsWidget | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 18, 20, 18)
         outer.setSpacing(14)
-        outer.addLayout(self._build_header())
+        outer.addLayout(self._build_header(has_result=pair.result is not None))
 
         result = pair.result
         if result is None:
@@ -82,8 +95,13 @@ class PairDetailView(QWidget):
         tabs.addTab(self._build_summary_page(result), "Dataset Summary")
         outer.addWidget(tabs, 1)
 
+    def chart_html(self) -> str:
+        """Rendered chart markup for the report export, or "" if this pair
+        failed and never built a charts widget."""
+        return self._charts_widget.render_to_base64_html() if self._charts_widget else ""
+
     # ------------------------------------------------------------------
-    def _build_header(self) -> QHBoxLayout:
+    def _build_header(self, has_result: bool) -> QHBoxLayout:
         pair = self._pair
         source_name = Path(pair.source_path).name
         target_name = Path(pair.target_path).name
@@ -93,7 +111,7 @@ class PairDetailView(QWidget):
 
         title_box = QVBoxLayout()
         title_box.setSpacing(2)
-        title = QLabel(f"{source_name} → {target_name}")
+        title = QLabel(self._title or f"{source_name} → {target_name}")
         title.setObjectName("appTitle")
         subtitle = QLabel(self._status_text())
         subtitle.setObjectName("appSubtitle")
@@ -102,15 +120,23 @@ class PairDetailView(QWidget):
         title_box.addWidget(subtitle)
         row.addLayout(title_box)
         row.addStretch(1)
+
+        if has_result:
+            export_button = QPushButton("Export Report…")
+            export_button.setCursor(Qt.PointingHandCursor)
+            export_button.clicked.connect(self.export_requested.emit)
+            row.addWidget(export_button, 0, Qt.AlignTop)
         return row
 
     def _status_text(self) -> str:
         pair = self._pair
         if pair.result is None:
-            return "Failed"
-        if pair.result.metrics is None:
-            return "Completed — no target labels to evaluate against"
-        return "Completed"
+            status = "Failed"
+        elif pair.result.metrics is None:
+            status = "Completed — no target labels to evaluate against"
+        else:
+            status = "Completed"
+        return f"{self._subtitle_prefix}  ·  {status}" if self._subtitle_prefix else status
 
     def _build_metrics_row(self, result: TransferLearningResult) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -169,6 +195,7 @@ class PairDetailView(QWidget):
     def _build_visualizations_page(self, result: TransferLearningResult) -> QWidget:
         charts = AnalyticsChartsWidget(self._palette)
         charts.update_result(result)
+        self._charts_widget = charts
         return charts
 
     def _build_summary_page(self, result: TransferLearningResult) -> QWidget:

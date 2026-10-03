@@ -5,6 +5,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 
 
 class BDAMethod(TransferLearningMethod):
@@ -59,7 +60,10 @@ class BDAMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         if source_labels is None:
             raise ValueError("BDA requires source_labels")
 
@@ -102,6 +106,9 @@ class BDAMethod(TransferLearningMethod):
         transformed_target = np.zeros((nt, dim))
 
         for it in range(self._iterations):
+            if control is not None:
+                control.checkpoint()
+                control.report_iteration(self.name, it + 1, self._iterations)
             N_mat = np.zeros((n, n))
             if Y_tar_pseudo is not None and len(Y_tar_pseudo) == nt:
                 for c in classes:

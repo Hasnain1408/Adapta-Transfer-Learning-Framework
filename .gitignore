@@ -69,3 +69,6 @@ Project/Datasets
 Project/src/__pycache__
 
 # Don't need to track these files, 
+CLAUDE.md
+Project/main.spec
+Project/Prompt.txt

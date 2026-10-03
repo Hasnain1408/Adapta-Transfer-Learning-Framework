@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -59,6 +58,7 @@ class HistoryTab(QWidget):
 
     configuration_requested = pyqtSignal(object)  # ExperimentRecord
     detail_requested = pyqtSignal(object)  # ExperimentHistoryEntry
+    export_requested = pyqtSignal(object)  # ExperimentHistoryEntry
 
     def __init__(
         self,
@@ -96,6 +96,14 @@ class HistoryTab(QWidget):
         self._load_button.setEnabled(False)
         self._load_button.clicked.connect(self._emit_configuration)
 
+        self._export_button = QPushButton("Export Report…")
+        self._export_button.setCursor(Qt.PointingHandCursor)
+        self._export_button.setToolTip(
+            "Export a PDF report rebuilt from this experiment's saved configuration and scores"
+        )
+        self._export_button.setEnabled(False)
+        self._export_button.clicked.connect(self._emit_export_request)
+
         self._delete_button = QPushButton("Delete")
         self._delete_button.setObjectName("dangerButton")
         self._delete_button.setCursor(Qt.PointingHandCursor)
@@ -107,6 +115,7 @@ class HistoryTab(QWidget):
         toolbar.addWidget(self._user_label)
         toolbar.addStretch(1)
         toolbar.addWidget(self._load_button)
+        toolbar.addWidget(self._export_button)
         toolbar.addWidget(self._delete_button)
         toolbar.addWidget(self._refresh_button)
 
@@ -243,6 +252,7 @@ class HistoryTab(QWidget):
     def _sync_buttons(self) -> None:
         has_selection = self._selected_entry() is not None
         self._load_button.setEnabled(has_selection)
+        self._export_button.setEnabled(has_selection)
         self._delete_button.setEnabled(has_selection)
 
     def _selected_entry(self) -> ExperimentHistoryEntry | None:
@@ -262,28 +272,37 @@ class HistoryTab(QWidget):
         if entry is not None:
             self.detail_requested.emit(entry)
 
+    def _emit_export_request(self) -> None:
+        entry = self._selected_entry()
+        if entry is not None:
+            self.export_requested.emit(entry)
+
     def _delete_selected(self) -> None:
         entry = self._selected_entry()
         if entry is None or self._catalog is None or entry.experiment.id is None:
             return
 
-        confirmed = message_box.question(
+        confirmed = message_box.confirm(
             self,
             "Delete Experiment",
-            f"Delete experiment #{entry.experiment.id} "
-            f"({entry.experiment.tl_algorithm})?\n\n"
-            "Its evaluation scores are deleted with it. This cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            f"Delete experiment #{entry.experiment.id} ({entry.experiment.tl_algorithm})?",
+            "Its evaluation scores go with it, and the Comparison charts stop "
+            "counting it. This can't be undone.",
+            confirm_label="Delete",
+            destructive=True,
         )
-        if confirmed != QMessageBox.Yes:
+        if not confirmed:
             return
 
         try:
             self._catalog.delete_experiment(entry.experiment.id)
-        except Exception as exc:  # noqa: BLE001 - shown verbatim
-            message_box.critical(
-                self, "Delete Failed", f"The experiment could not be deleted:\n\n{exc}"
+        except Exception as exc:  # noqa: BLE001
+            message_box.error(
+                self,
+                "Delete Failed",
+                f"Experiment #{entry.experiment.id} wasn't deleted.",
+                "It's still in your history. Try again in a moment.",
+                technical=str(exc),
             )
             return
         self.refresh()

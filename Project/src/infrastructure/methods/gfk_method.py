@@ -4,6 +4,7 @@ import numpy as np
 from scipy.linalg import null_space
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 
 
 class GFKMethod(TransferLearningMethod):
@@ -101,7 +102,10 @@ class GFKMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         n_features = source_features.shape[1]
         # Paper's constraint: dim <= 0.5 * n_feature, and dim must be >= 1.
         dim = max(1, min(self._latent_dim, n_features // 2))

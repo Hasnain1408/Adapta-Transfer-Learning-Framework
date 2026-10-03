@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -38,6 +39,8 @@ def _dash(value: object) -> str:
 
 class ExperimentDetailView(QWidget):
     """Read-only page combining the experiment, evaluation, user, and dataset rows."""
+
+    export_requested = pyqtSignal()
 
     def __init__(
         self,
@@ -112,6 +115,11 @@ class ExperimentDetailView(QWidget):
         badge.setObjectName("statusBadge")
         badge.setProperty("status", experiment.status.value)
         row.addWidget(badge, 0, Qt.AlignTop)
+
+        export_button = QPushButton("Export Report…")
+        export_button.setCursor(Qt.PointingHandCursor)
+        export_button.clicked.connect(self.export_requested.emit)
+        row.addWidget(export_button, 0, Qt.AlignTop)
         return row
 
     def _build_metrics_row(self, evaluation: EvaluationRecord) -> QHBoxLayout:

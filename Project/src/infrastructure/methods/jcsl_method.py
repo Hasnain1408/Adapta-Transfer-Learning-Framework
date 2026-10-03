@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from domain.interfaces import TransferLearningMethod
+from domain.run_control import RunControl
 
 
 class JCSLMethod(TransferLearningMethod):
@@ -57,7 +58,10 @@ class JCSLMethod(TransferLearningMethod):
         source_features: np.ndarray,
         target_features: np.ndarray,
         source_labels: np.ndarray | None = None,
+        control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if control is not None:
+            control.checkpoint()
         if source_labels is None:
             raise ValueError("JCSL requires source_labels")
 
@@ -88,7 +92,10 @@ class JCSLMethod(TransferLearningMethod):
         obj_old = objective(U, weights)
         n_batches = int(np.ceil(ns / batch_size))
 
-        for _ in range(self._iterations):
+        for it in range(self._iterations):
+            if control is not None:
+                control.checkpoint()
+                control.report_iteration(self.name, it + 1, self._iterations)
             order = rng.permutation(ns)
             for b in range(n_batches):
                 batch_idx = order[b * batch_size : min((b + 1) * batch_size, ns)]
