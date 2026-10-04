@@ -1,3 +1,5 @@
+"""Domain protocols and abstract base interfaces."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -10,14 +12,20 @@ from .run_control import RunControl
 
 
 class DatasetLoader(Protocol):
+    """Protocol for loading raw dataset files into domain Dataset models."""
+
     def load(self, path: str, is_source: bool = True) -> Dataset:
+        """Load and return a Dataset model from the given path."""
         ...
 
 
 class TransferLearningMethod(ABC):
+    """Abstract base class for all transfer learning algorithm implementations."""
+
     @property
     @abstractmethod
     def name(self) -> str:
+        """Human-readable algorithm identifier name."""
         raise NotImplementedError
 
     @abstractmethod
@@ -28,10 +36,15 @@ class TransferLearningMethod(ABC):
         source_labels: np.ndarray | None = None,
         control: RunControl | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """*control*, when given, is a cooperative pause/cancel token: call
-        ``control.checkpoint()`` at the top of the method and, for iterative
-        methods, once per iteration -- see ``RunControl`` for what that does
-        and why it can only take effect between steps, not mid-computation.
+        """Execute domain adaptation transformation on source and target features.
+
+        Args:
+            source_features: Array of shape (n_source_samples, n_features).
+            target_features: Array of shape (n_target_samples, n_features).
+            source_labels: Optional ground-truth labels for source samples.
+            control: Optional cooperative pause or cancellation token.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Adapted source and target feature matrices.
         """
         raise NotImplementedError
-

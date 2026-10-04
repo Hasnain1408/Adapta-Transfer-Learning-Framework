@@ -1,3 +1,5 @@
+"""Execution control and thread synchronization for active experiment runs."""
+
 from __future__ import annotations
 
 import threading
@@ -6,40 +8,22 @@ from typing import Callable
 
 from domain.progress import ProgressUpdate
 
-#: An update identical to the one before it is dropped if it arrives
-#: faster than this. Only *literal* repeats are coalesced: anything the
-#: user would see as new text goes through immediately, because dropping
-#: on stage alone silently hid every preprocessing sub-step and nine of
-#: JDA's ten iterations on a fast dataset.
+# Minimum interval between duplicate progress notifications to prevent event flooding.
 _MIN_REPEAT_INTERVAL = 0.05
 
-#: Upper bound on how many progress reports one iterative method emits.
-#: Every method in the app today runs 10-20 iterations and reports all of
-#: them; this only thins the stream if some future method loops thousands
-#: of times, where per-iteration updates would be unreadable anyway.
+# Maximum iteration updates emitted per iterative method to bound logging overhead.
 _MAX_ITERATION_REPORTS = 50
 
 
 class RunCancelled(Exception):
-    """Raised from ``RunControl.checkpoint`` once a run has been cancelled."""
+    """Raised from RunControl.checkpoint when a running experiment has been cancelled."""
 
 
 class RunControl:
-    """The channel between the UI thread and the worker thread actually
-    running a (possibly long) experiment: pause/cancel downwards, progress
-    upwards.
+    """Thread-safe synchronization channel between worker and UI threads.
 
-    There is no way to safely interrupt a single blocking numpy call (an
-    eigendecomposition mid-flight can't be paused), so pause/cancel only
-    take effect at *checkpoints* the run calls between logical steps -- the
-    top of ``execute()``, each iteration of an iterative method, and each
-    pair of a batch run. A fast one-shot method (CORAL, GFK, TCA) may
-    simply finish before a pause/cancel has a chance to land.
-
-    Progress travels the same path for the same reason: ``control`` is
-    already handed to every method's ``run()``, so an iterative method can
-    say which iteration it is on without a second parameter threaded
-    through ten call sites.
+    Provides cooperative pause, resume, and cancellation mechanisms downwards to
+    workers, while streaming progress notifications upwards to user interfaces.
     """
 
     def __init__(self) -> None:
@@ -54,28 +38,27 @@ class RunControl:
         self._pair_index = 0
         self._pair_total = 0
         self._unit_label = "Pair"
-        #: Total seconds spent paused so far, so the timing the use case
-        #: reports is compute cost and not "how long the user left it
-        #: paused". Only whole pause/resume cycles land here; a pause still
-        #: in progress is added on by the ``paused_seconds`` property.
+        # Total paused duration in seconds, excluding open pauses.
         self._paused_total = 0.0
         self._paused_since: float | None = None
 
     def pause(self) -> None:
+        """Signal the running experiment to pause at the next checkpoint."""
         with self._lock:
             if self._paused_since is None:
                 self._paused_since = perf_counter()
         self._running.clear()
 
     def resume(self) -> None:
+        """Signal a paused experiment to resume execution."""
         self._close_pause_window()
         self._running.set()
 
     def cancel(self) -> None:
+        """Signal the running experiment to abort at the next checkpoint."""
         self._cancelled.set()
         self._close_pause_window()
-        # Wake up a paused checkpoint so it can observe the cancellation
-        # instead of blocking forever.
+        # Wake up a paused checkpoint so cancellation is processed immediately.
         self._running.set()
 
     def _close_pause_window(self) -> None:
@@ -86,7 +69,7 @@ class RunControl:
 
     @property
     def paused_seconds(self) -> float:
-        """Seconds spent paused, including a pause still open right now."""
+        """Total duration spent paused in seconds, including any active pause."""
         with self._lock:
             total = self._paused_total
             if self._paused_since is not None:
@@ -95,56 +78,45 @@ class RunControl:
 
     @property
     def is_paused(self) -> bool:
+        """True if the controller is currently in a paused state."""
         return not self._running.is_set()
 
     @property
     def is_cancelled(self) -> bool:
+        """True if cancellation has been requested."""
         return self._cancelled.is_set()
 
     def checkpoint(self) -> None:
-        """Call between logical steps. Blocks while paused; raises
-        ``RunCancelled`` once cancelled, whether that happened while paused
-        or not."""
+        """Cooperative synchronization checkpoint called between execution steps.
+
+        Blocks execution while paused. Raises RunCancelled if cancellation was requested.
+        """
         self._running.wait()
         if self._cancelled.is_set():
             raise RunCancelled()
 
     # ------------------------------------------------------------------
-    # Progress reporting (worker thread -> UI thread)
+    # Progress Reporting Helpers
     # ------------------------------------------------------------------
     @property
     def elapsed_seconds(self) -> float:
-        """Compute seconds since the run started, paused time excluded."""
+        """Active compute time in seconds since start, excluding paused durations."""
         return max(0.0, perf_counter() - self._started - self.paused_seconds)
 
     def set_listener(self, listener: Callable[[ProgressUpdate], None] | None) -> None:
-        """Register who hears progress. Set from the UI thread *before* the
-        worker starts; the listener is then called on the worker thread, so
-        it must do nothing but hand the update across (a queued Qt signal
-        emit, in this app)."""
+        """Register a callback listener to receive progress update snapshots."""
         with self._lock:
             self._listener = listener
 
     def set_pair(self, index: int, total: int, label: str = "Pair") -> None:
-        """Multi-item context stamped onto every subsequent update.
-
-        ``execute()`` has no idea it is one pair of a batch or one method of
-        a comparison, so the enclosing loop sets this instead of passing it
-        down. *label* names what is being counted ("Pair", "Method") so the
-        UI can caption it without knowing which loop is running.
-        """
+        """Set multi-item batch execution context (e.g. Pair 2 of 5)."""
         with self._lock:
             self._pair_index = index
             self._pair_total = total
             self._unit_label = label
 
     def report(self, stage: str, detail: str = "", completed: int = 0, total: int = 0) -> None:
-        """Announce the step now starting. Never raises.
-
-        A run must not die because the UI's handler threw -- progress is
-        commentary on the work, not part of it -- so the listener call is
-        guarded.
-        """
+        """Emit a progress update notification to the registered listener."""
         now = perf_counter()
         with self._lock:
             listener = self._listener
@@ -164,10 +136,6 @@ class RunControl:
                 pair_index=self._pair_index,
                 pair_total=self._pair_total,
                 unit_label=self._unit_label,
-                # _paused_total, not the paused_seconds property: the lock
-                # is non-reentrant and already held here. Any open pause is
-                # excluded, which is harmless -- report() only runs after a
-                # checkpoint has let the thread through, so no pause is open.
                 elapsed_seconds=max(0.0, now - self._started - self._paused_total),
             )
             self._last_update = update
@@ -176,20 +144,14 @@ class RunControl:
         if listener is not None:
             try:
                 listener(update)
-            except Exception:  # noqa: BLE001 - a broken listener must not sink the run
+            except Exception:  # Guard against listener failures
                 pass
 
     def report_iteration(self, label: str, index: int, total: int) -> None:
-        """Convenience for the iterative methods: "JDA iteration 3 of 10".
-
-        *index* is 1-based (the iteration about to run).
-        """
+        """Emit an iteration progress update for iterative optimization methods."""
         from domain.progress import STAGE_ADAPTING
 
         if total > _MAX_ITERATION_REPORTS:
-            # Report roughly _MAX_ITERATION_REPORTS times, evenly spaced,
-            # always including the last iteration so the count still lands
-            # on "n of n" rather than stopping short.
             stride = total // _MAX_ITERATION_REPORTS
             if index % stride and index != total:
                 return
@@ -203,5 +165,6 @@ class RunControl:
 
     @property
     def last_update(self) -> ProgressUpdate | None:
+        """Return the most recently emitted progress update snapshot."""
         with self._lock:
             return self._last_update

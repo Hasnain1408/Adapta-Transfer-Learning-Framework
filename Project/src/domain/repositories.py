@@ -1,14 +1,7 @@
-"""Repository contracts for the persisted entities.
+"""Domain repository protocol contracts for persisted entities.
 
-Structural ``Protocol``s, matching the style of ``DatasetLoader`` in
-``domain.interfaces``: the domain states what persistence must offer, and
-``infrastructure.persistence`` supplies it. Nothing here imports sqlite3 or any
-other storage technology, so swapping SQLite for something else touches only
-the infrastructure layer.
-
-Convention across all four: ``add`` returns the entity with its ``id``
-populated, getters return ``None`` when the row is absent, and ``delete``
-returns ``True`` only if a row was actually removed.
+Defines structural Protocol interfaces that concrete storage adapters in
+infrastructure.persistence must implement.
 """
 
 from __future__ import annotations
@@ -25,96 +18,122 @@ from .entities import (
 
 
 class UserRepository(Protocol):
-    def add(self, user: User) -> User:
-        """Insert *user* and return it with ``id`` set.
+    """Storage contract for User entity persistence."""
 
-        Raises ``ValueError`` if the email is already registered.
-        """
+    def add(self, user: User) -> User:
+        """Insert a user record and return it with assigned ID."""
         ...
 
     def update(self, user: User) -> User:
-        """Persist changes to an existing user (``user.id`` must be set)."""
+        """Update an existing user record."""
         ...
 
     def delete(self, user_id: int) -> bool:
-        """Remove a user. Their experiments survive with a null owner."""
+        """Delete a user record by ID."""
         ...
 
-    def get(self, user_id: int) -> User | None: ...
+    def get(self, user_id: int) -> User | None:
+        """Fetch a user by ID."""
+        ...
 
     def get_by_email(self, email: str) -> User | None:
-        """Look up by the natural key. Matching is case-insensitive."""
+        """Fetch a user by case-insensitive email address."""
         ...
 
     def list_all(self) -> list[User]:
-        """Every user, ordered by name."""
+        """Fetch all users ordered by name."""
         ...
 
 
 class DatasetRepository(Protocol):
-    def add(self, dataset: DatasetRecord) -> DatasetRecord: ...
+    """Storage contract for DatasetRecord catalogue persistence."""
 
-    def update(self, dataset: DatasetRecord) -> DatasetRecord: ...
-
-    def delete(self, dataset_id: int) -> bool:
-        """Remove a catalogue entry. Experiments referencing it keep their
-        denormalised domain names and lose only the link."""
+    def add(self, dataset: DatasetRecord) -> DatasetRecord:
+        """Insert a new dataset record."""
         ...
 
-    def get(self, dataset_id: int) -> DatasetRecord | None: ...
+    def update(self, dataset: DatasetRecord) -> DatasetRecord:
+        """Update an existing dataset record."""
+        ...
+
+    def delete(self, dataset_id: int) -> bool:
+        """Delete a dataset record by ID."""
+        ...
+
+    def get(self, dataset_id: int) -> DatasetRecord | None:
+        """Fetch a dataset record by ID."""
+        ...
 
     def get_by_path(self, source_path: str) -> DatasetRecord | None:
-        """Look up by file path — the natural key used to avoid duplicates."""
+        """Fetch a dataset record by its unique file path."""
         ...
 
     def upsert_by_path(self, dataset: DatasetRecord) -> DatasetRecord:
-        """Insert *dataset*, or refresh the existing row with the same path.
-
-        Re-running against a file that has since changed should update the
-        catalogued sample/feature counts rather than add a second row.
-        """
+        """Insert a dataset record or update existing statistics if the path exists."""
         ...
 
-    def list_all(self) -> list[DatasetRecord]: ...
+    def list_all(self) -> list[DatasetRecord]:
+        """Fetch all registered dataset records."""
+        ...
 
 
 class ExperimentRepository(Protocol):
-    def add(self, experiment: ExperimentRecord) -> ExperimentRecord: ...
+    """Storage contract for ExperimentRecord persistence and history read models."""
 
-    def update(self, experiment: ExperimentRecord) -> ExperimentRecord: ...
+    def add(self, experiment: ExperimentRecord) -> ExperimentRecord:
+        """Insert a new experiment record."""
+        ...
+
+    def update(self, experiment: ExperimentRecord) -> ExperimentRecord:
+        """Update an existing experiment record."""
+        ...
 
     def set_status(
         self, experiment_id: int, status: str, error_message: str | None = None
     ) -> None:
-        """Move an experiment to a terminal state without rewriting the row."""
+        """Update the status of an experiment record without full row rewrite."""
         ...
 
     def delete(self, experiment_id: int) -> bool:
-        """Remove an experiment. Its evaluation row is cascaded away."""
+        """Delete an experiment record by ID."""
         ...
 
-    def get(self, experiment_id: int) -> ExperimentRecord | None: ...
+    def get(self, experiment_id: int) -> ExperimentRecord | None:
+        """Fetch an experiment record by ID."""
+        ...
 
     def list_all(self, user_id: int | None = None) -> list[ExperimentRecord]:
-        """Newest first; restricted to one owner when *user_id* is given."""
+        """Fetch all experiments, optionally filtered by user ID."""
         ...
 
     def history(self, user_id: int | None = None) -> list[ExperimentHistoryEntry]:
-        """Experiments joined with owner and scores, newest first."""
+        """Fetch aggregated history entries joining experiments with users and scores."""
         ...
 
-    def count(self) -> int: ...
+    def count(self) -> int:
+        """Return the total number of registered experiments."""
+        ...
 
 
 class EvaluationRepository(Protocol):
+    """Storage contract for EvaluationRecord metrics persistence."""
+
     def add(self, evaluation: EvaluationRecord) -> EvaluationRecord:
-        """Insert scores, replacing any existing row for the same experiment."""
+        """Insert evaluation scores, replacing existing scores for the same experiment."""
         ...
 
-    def get(self, evaluation_id: int) -> EvaluationRecord | None: ...
+    def get(self, evaluation_id: int) -> EvaluationRecord | None:
+        """Fetch an evaluation record by ID."""
+        ...
 
-    def get_for_experiment(self, experiment_id: int) -> EvaluationRecord | None: ...
+    def get_for_experiment(self, experiment_id: int) -> EvaluationRecord | None:
+        """Fetch the evaluation record associated with a given experiment ID."""
+        ...
 
-    def delete(self, evaluation_id: int) -> bool: ...
+    def delete(self, evaluation_id: int) -> bool:
+        """Delete an evaluation record by ID."""
+        ...
 
-    def list_all(self) -> list[EvaluationRecord]: ...
+    def list_all(self) -> list[EvaluationRecord]:
+        """Fetch all evaluation records."""
+        ...

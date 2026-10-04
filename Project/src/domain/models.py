@@ -1,3 +1,5 @@
+"""Domain execution models, request payloads, and evaluation outcome dataclasses."""
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -9,6 +11,8 @@ from domain.ranking import average_metric_ranks
 
 @dataclass(frozen=True)
 class TransferLearningRequest:
+    """Execution parameters for a single transfer learning experiment run."""
+
     method_name: str
     source_path: str
     target_path: str
@@ -23,6 +27,8 @@ class TransferLearningRequest:
 
 @dataclass(frozen=True)
 class EvaluationMetrics:
+    """Classification performance metrics computed on the target domain."""
+
     accuracy: float
     precision: float
     recall: float
@@ -30,46 +36,27 @@ class EvaluationMetrics:
     total_samples: int
     correct_predictions: int
     wrong_predictions: int
-    #: Area under the ROC curve, or ``None`` when it cannot be computed —
-    #: a classifier exposing neither ``predict_proba`` nor
-    #: ``decision_function``, a single-class target, or scores whose classes
-    #: don't line up with the target's. Optional rather than 0.0 because
-    #: "not measurable" and "no better than chance" are different claims.
+    # Area under the ROC curve, or None when probabilities are unavailable.
     auc: Optional[float] = None
 
 
 @dataclass(frozen=True)
 class DomainAlignment:
-    """How far apart the two domains sit, before vs. after adaptation.
-
-    ``mmd_before`` is measured in the preprocessed input space and
-    ``mmd_after`` in the method's output space -- see ``domain/mmd.py`` for
-    why those two spaces are comparable in ratio but not in absolute terms.
-    """
+    """Measurement of statistical divergence between source and target domains."""
 
     mmd_before: float
     mmd_after: float
-    #: ``((before - after) / before) * 100``; positive means the gap closed.
+    # ((before - after) / before) * 100; positive values indicate reduced divergence.
     change_percent: float
-    #: One of the ``mmd.STATUS_*`` labels, derived from ``change_percent``.
     status: str
     kernel: str = "rbf"
-
-    #: Domain Overlap: how much the two point clouds intermix, 0-100 (see
-    #: ``domain/overlap.py``). Optional because a method whose output space
-    #: makes the measure unavailable still produces a valid MMD reading,
-    #: and because rows persisted before this metric existed have no value
-    #: to report -- ``None`` renders as "—", never as 0%.
+    # Domain Overlap metrics (percentage of mutual neighbourhood intermixing).
     overlap_before: Optional[float] = None
     overlap_after: Optional[float] = None
 
     @property
     def overlap_change_points(self) -> Optional[float]:
-        """After minus before, in percentage *points* — not a ratio.
-
-        ``None`` unless both readings exist, so a half-measured run cannot
-        render a change that was never computed.
-        """
+        """Change in overlap percentage points (after - before)."""
         if self.overlap_before is None or self.overlap_after is None:
             return None
         return self.overlap_after - self.overlap_before
@@ -77,34 +64,37 @@ class DomainAlignment:
 
 @dataclass(frozen=True)
 class NegativeTransferAnalysis:
-    """Did adaptation actually help the *task*, not just the distributions?
-
-    ``baseline`` is the same classifier trained on the preprocessed source
-    and evaluated on the preprocessed target -- i.e. the score you would get
-    by ignoring domain adaptation entirely. Negative transfer is that
-    comparison coming out worse, which is a stronger claim than an MMD or a
-    scatter plot can make on its own.
-    """
+    """Diagnostic comparison between domain-adapted model and unadapted baseline."""
 
     baseline: EvaluationMetrics
     adapted: EvaluationMetrics
     accuracy_delta: float
     f1_delta: float
-    #: True when adaptation lost more than ``NEGATIVE_TRANSFER_TOLERANCE``
-    #: accuracy against the no-adaptation baseline.
     is_negative_transfer: bool
 
 
-#: Accuracy may wobble by a hair for reasons unrelated to the method (tie
-#: breaking in k-NN, say), so a loss only counts as negative transfer past
-#: this margin.
+# Accuracy drop threshold beyond which adaptation is flagged as negative transfer.
 NEGATIVE_TRANSFER_TOLERANCE = 0.005
 
 
 @dataclass(frozen=True)
+class Dataset:
+    """In-memory dataset container holding feature matrix and label vectors."""
+
+    features: np.ndarray
+    labels: Optional[np.ndarray]
+    feature_names: list[str]
+    label_name: str
+    dtypes: list[str] = field(default_factory=list)
+    missing_value_count: int = 0
+
+
+@dataclass(frozen=True)
 class TransferLearningResult:
-    source_dataset: "Dataset"
-    target_dataset: "Dataset"
+    """Comprehensive outcome payload of a single transfer learning execution."""
+
+    source_dataset: Dataset
+    target_dataset: Dataset
     transformed_source: np.ndarray
     transformed_target: np.ndarray
     output_feature_names: list[str]
@@ -112,54 +102,19 @@ class TransferLearningResult:
     target_predictions: Optional[np.ndarray] = None
     target_actuals: Optional[np.ndarray] = None
     prediction_correctness: Optional[list[str]] = None
-    #: Features as they entered ``method.run`` -- normalized and standardized
-    #: but not yet adapted. This is the "Before Adaptation" view in the
-    #: Visualization tab and the space ``alignment.mmd_before`` is measured
-    #: in; keeping it means before/after are the same samples in the same
-    #: order, so the two projections are directly comparable.
     preprocessed_source: Optional[np.ndarray] = None
     preprocessed_target: Optional[np.ndarray] = None
     alignment: Optional[DomainAlignment] = None
     negative_transfer: Optional[NegativeTransferAnalysis] = None
-    #: When the run itself started and finished — not when a report was
-    #: generated from it, which can be much later (or repeatedly). Both are
-    #: naive local times, matching what the UI and reports display.
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    #: Wall-clock seconds for the whole run: loading, preprocessing,
-    #: adaptation, and both evaluations. Measured with a monotonic clock
-    #: rather than subtracting the timestamps above, which would skew if the
-    #: system clock stepped mid-run (NTP, DST).
     duration_seconds: Optional[float] = None
-    #: Seconds spent inside the method's own ``run()`` alone. This is the
-    #: figure to compare methods on: ``duration_seconds`` also carries file
-    #: I/O and classifier fitting, which are the same work whichever method
-    #: was selected and would flatten the differences between them.
     adaptation_seconds: Optional[float] = None
-
-@dataclass(frozen=True)
-class Dataset:
-    features: np.ndarray
-    labels: Optional[np.ndarray]
-    feature_names: list[str]
-    label_name: str
-    #: Pandas dtype of each feature column *before* numeric coercion (e.g.
-    #: ``"int64"``, ``"float64"``, ``"object"``), parallel to ``feature_names``.
-    #: A ``.mat`` source has no such notion, so this is empty for those.
-    dtypes: list[str] = field(default_factory=list)
-    #: Count of missing/non-numeric feature cells found at load time — these
-    #: get filled with 0.0 before ``features`` is built, so this is the only
-    #: record that they were ever missing.
-    missing_value_count: int = 0
 
 
 @dataclass(frozen=True)
 class BatchTransferLearningRequest:
-    """Same configuration as ``TransferLearningRequest``, run over every
-
-    ordered (source, target) pair drawn from ``file_paths`` — i.e. for
-    ``[a, b, c]``: a->b, a->c, b->a, b->c, c->a, c->b.
-    """
+    """Execution parameters for pairwise batch transfer learning across multiple datasets."""
 
     method_name: str
     file_paths: list[str]
@@ -174,14 +129,7 @@ class BatchTransferLearningRequest:
 
 @dataclass(frozen=True)
 class MultiMethodTransferLearningRequest:
-    """Several methods against *one* dataset pair, in a single run.
-
-    The orthogonal axis to ``BatchTransferLearningRequest``: a batch varies
-    the datasets and holds the method fixed, this varies the method and
-    holds the datasets fixed. Everything except ``method_names`` is shared
-    across the methods, which is the point — a comparison is only worth
-    reading if the only thing that differed was the method.
-    """
+    """Execution parameters for comparing multiple methods across a single dataset pair."""
 
     method_names: list[str]
     source_path: str
@@ -197,7 +145,7 @@ class MultiMethodTransferLearningRequest:
 
 @dataclass(frozen=True)
 class MethodTransferLearningResult:
-    """Outcome of one method within a multi-method run."""
+    """Result payload for a single method within a multi-method comparison run."""
 
     method_name: str
     result: Optional[TransferLearningResult] = None
@@ -205,48 +153,30 @@ class MethodTransferLearningResult:
 
     @property
     def metrics(self) -> Optional[EvaluationMetrics]:
+        """Evaluation metrics produced by this method run."""
         return self.result.metrics if self.result is not None else None
 
 
 @dataclass(frozen=True)
 class MultiMethodTransferLearningResult:
-    """Every method's outcome on the same pair, plus the one shared baseline.
-
-    ``baseline`` is computed once from the preprocessed features and is
-    therefore *the same number* for every method here, not one baseline per
-    method that happens to agree. That is what lets the per-method
-    ``accuracy_delta`` figures be compared against each other directly.
-    """
+    """Aggregated outcome of multi-method benchmark execution on a shared dataset pair."""
 
     source_path: str
     target_path: str
     methods: list[MethodTransferLearningResult]
     baseline: Optional[EvaluationMetrics] = None
-    #: True when the run was cancelled partway; ``methods`` then holds only
-    #: those that finished before the cancellation landed.
     cancelled: bool = False
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    #: Wall clock for the whole run, including the loading and preprocessing
-    #: shared by every method — so it is well below the sum of what the same
-    #: methods would cost run one at a time.
     duration_seconds: Optional[float] = None
 
     @property
-    def evaluated(self) -> list["MethodTransferLearningResult"]:
-        """Only the methods that produced metrics, i.e. the comparable ones."""
+    def evaluated(self) -> list[MethodTransferLearningResult]:
+        """List of successfully evaluated method results."""
         return [entry for entry in self.methods if entry.metrics is not None]
 
     def method_ranks(self) -> dict[str, float]:
-        """Mean rank per evaluated method across every metric. Lower is better.
-
-        Not accuracy alone. On the imbalanced datasets this app is usually
-        pointed at, a method whose classifier collapses onto the majority
-        class scores high on accuracy and zero on precision, recall, and F1
-        — ranking on accuracy would crown exactly the worst result in the
-        table. Averaging across metrics is the same rule the Comparison tab
-        applies to stored experiments, shared from ``domain.ranking``.
-        """
+        """Compute mean competition rank across metrics for each evaluated method."""
         evaluated = self.evaluated
         metric_rows = [
             {
@@ -265,19 +195,11 @@ class MultiMethodTransferLearningResult:
             if average is not None
         }
 
-    def ranked(self) -> list["MethodTransferLearningResult"]:
-        """Evaluated methods, best first.
-
-        Mean rank across metrics decides; accuracy breaks a tie, and
-        adaptation time breaks that — two methods scoring identically are
-        not equally good if one took ten times as long. Time is the method's
-        own ``adaptation_seconds``, not the whole run: loading and classifier
-        fitting cost the same whichever method was used and would only add
-        noise to the ordering.
-        """
+    def ranked(self) -> list[MethodTransferLearningResult]:
+        """Return evaluated methods sorted from best to worst by rank, accuracy, and runtime."""
         ranks = self.method_ranks()
 
-        def sort_key(entry: "MethodTransferLearningResult") -> tuple[float, float, float]:
+        def sort_key(entry: MethodTransferLearningResult) -> tuple[float, float, float]:
             seconds = (
                 entry.result.adaptation_seconds
                 if entry.result is not None and entry.result.adaptation_seconds is not None
@@ -292,14 +214,15 @@ class MultiMethodTransferLearningResult:
         return sorted(self.evaluated, key=sort_key)
 
     @property
-    def best(self) -> Optional["MethodTransferLearningResult"]:
+    def best(self) -> Optional[MethodTransferLearningResult]:
+        """Return the highest-ranked method result."""
         ranked = self.ranked()
         return ranked[0] if ranked else None
 
 
 @dataclass(frozen=True)
 class PairTransferLearningResult:
-    """Outcome of one (source, target) pair within a batch run."""
+    """Outcome payload for one source-target pair in a batch execution."""
 
     source_path: str
     target_path: str
@@ -309,15 +232,11 @@ class PairTransferLearningResult:
 
 @dataclass(frozen=True)
 class BatchTransferLearningResult:
+    """Aggregated outcome of a pairwise batch transfer learning run."""
+
     pairs: list[PairTransferLearningResult]
     average_metrics: Optional[EvaluationMetrics] = None
-    #: True when the batch was cancelled partway through -- ``pairs`` then
-    #: holds only the pairs that finished before the cancellation landed.
     cancelled: bool = False
-    #: Span of the whole batch, not of any single pair (each pair carries its
-    #: own timestamps on its ``TransferLearningResult``).
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    #: Wall clock for the batch as a whole. Not the sum of the pairs': a
-    #: failed pair still costs time but contributes no result to sum from.
     duration_seconds: Optional[float] = None
