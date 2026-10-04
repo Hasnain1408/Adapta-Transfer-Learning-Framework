@@ -1,7 +1,7 @@
 """Static reference content shown in the Learning Materials dialog.
 
-Each constant is a list of ``(topic title, HTML body)`` pairs — plain data
-with no Qt dependency, kept apart from ``learning_materials_dialog.py`` so
+Each constant is a list of (topic title, HTML body) pairs — plain data
+with no Qt dependency, kept apart from learning_materials_dialog.py so
 that file is just widget/rendering logic and this one is just content to
 edit when a method, classifier, metric, or preprocessing option changes.
 """

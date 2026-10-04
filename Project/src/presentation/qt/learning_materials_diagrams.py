@@ -6,8 +6,8 @@ illustrations, never measurements — every one is captioned as such, because
 this app also renders charts of real experiment output a few tabs away and
 the two must never be confused.
 
-Referenced from the content HTML as ``{{diagram:key}}`` and substituted at
-render time by ``learning_materials_dialog``, so the content stays plain
+Referenced from the content HTML as {{diagram:key}} and substituted at
+render time by learning_materials_dialog, so the content stays plain
 data and the figures are only built when a topic is actually opened.
 """
 
@@ -531,7 +531,7 @@ BUILDERS = {
 
 
 def diagram_html(key: str, palette: dict[str, str]) -> str:
-    """``<img>`` markup for *key*, built once per key and theme.
+    """<img> markup for *key*, built once per key and theme.
 
     Unknown keys render as nothing rather than raising — a typo in the
     content should not take the whole dialog down.
