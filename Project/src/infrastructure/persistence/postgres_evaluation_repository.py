@@ -1,4 +1,4 @@
-"""PostgreSQL implementation of ``EvaluationRepository``."""
+"""PostgreSQL implementation of EvaluationRepository."""
 
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ from .postgres_mappers import _to_evaluation
 
 
 class PostgresEvaluationRepository:
-    """CRUD for ``evaluations`` — at most one row per experiment."""
+    """Provides CRUD operations for evaluation metrics (1:1 relationship with experiments)."""
 
     def __init__(self, database: Database) -> None:
+        """Initialize the evaluation repository with a shared database manager."""
         self._db = database
 
     def add(self, evaluation: EvaluationRecord) -> EvaluationRecord:
-        """Insert scores, replacing any existing row for the same experiment.
+        """Persist evaluation metrics, replacing existing records for the same experiment.
 
-        ``ON CONFLICT (experiment_id)`` upholds the 1:1 relationship: re-running
-        and re-saving an experiment overwrites its scores rather than failing
-        on the unique constraint.
+        Uses ON CONFLICT (experiment_id) DO UPDATE to ensure idempotency when re-running
+        or re-evaluating existing experiment runs.
         """
         row = self._db.execute_returning(
             """
@@ -78,27 +78,32 @@ class PostgresEvaluationRepository:
         return _to_evaluation(row)
 
     def get(self, evaluation_id: int) -> EvaluationRecord | None:
+        """Fetch an evaluation record by its primary key ID."""
         row = self._db.fetch_one(
             "SELECT * FROM evaluations WHERE id = %s", (evaluation_id,)
         )
         return _to_evaluation(row) if row else None
 
     def get_for_experiment(self, experiment_id: int) -> EvaluationRecord | None:
+        """Fetch the evaluation record associated with a given experiment ID."""
         row = self._db.fetch_one(
             "SELECT * FROM evaluations WHERE experiment_id = %s", (experiment_id,)
         )
         return _to_evaluation(row) if row else None
 
     def delete(self, evaluation_id: int) -> bool:
+        """Delete an evaluation record by ID."""
         return (
             self._db.execute("DELETE FROM evaluations WHERE id = %s", (evaluation_id,)) > 0
         )
 
     def list_all(self) -> list[EvaluationRecord]:
+        """Fetch all evaluation records ordered from newest to oldest."""
         rows = self._db.fetch_all("SELECT * FROM evaluations ORDER BY id DESC")
         return [_to_evaluation(row) for row in rows]
 
     def count(self) -> int:
+        """Return the total number of evaluation records."""
         row = self._db.fetch_one("SELECT count(*) AS total FROM evaluations")
         return int(row["total"]) if row else 0
 

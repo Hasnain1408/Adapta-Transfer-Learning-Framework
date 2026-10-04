@@ -1,4 +1,4 @@
-"""PostgreSQL implementation of ``DatasetRepository``."""
+"""PostgreSQL implementation of DatasetRepository."""
 
 from __future__ import annotations
 
@@ -9,12 +9,24 @@ from .postgres_mappers import _is_unique_violation, _to_dataset
 
 
 class PostgresDatasetRepository:
-    """CRUD for ``datasets``, the catalogue of files that have been used."""
+    """Provides CRUD and upsert operations for registered datasets."""
 
     def __init__(self, database: Database) -> None:
+        """Initialize the dataset repository with a shared database manager."""
         self._db = database
 
     def add(self, dataset: DatasetRecord) -> DatasetRecord:
+        """Register a new dataset in the catalogue.
+
+        Args:
+            dataset: The dataset record entity to persist.
+
+        Returns:
+            DatasetRecord: The persisted dataset entity with database-assigned ID and defaults.
+
+        Raises:
+            ValueError: If a dataset with the same source file path is already registered.
+        """
         try:
             row = self._db.execute_returning(
                 """
@@ -50,11 +62,10 @@ class PostgresDatasetRepository:
         return _to_dataset(row)
 
     def upsert_by_path(self, dataset: DatasetRecord) -> DatasetRecord:
-        """Insert, or refresh the row that already claims this ``source_path``.
+        """Insert a dataset record or update existing statistics if source_path exists.
 
-        Uses ``ON CONFLICT`` so the read and the write are one atomic
-        statement — checking for an existing row first and then inserting
-        would race against a concurrent run of the same file.
+        Uses PostgreSQL atomic ON CONFLICT (source_path) DO UPDATE to prevent race
+        conditions when multiple processes or re-runs access the same file.
         """
         row = self._db.execute_returning(
             """
@@ -95,6 +106,7 @@ class PostgresDatasetRepository:
         return _to_dataset(row)
 
     def update(self, dataset: DatasetRecord) -> DatasetRecord:
+        """Update an existing dataset record by its primary key ID."""
         if dataset.id is None:
             raise ValueError("Cannot update a dataset that has no id.")
         row = self._db.execute_returning(
@@ -127,25 +139,32 @@ class PostgresDatasetRepository:
         return _to_dataset(row)
 
     def delete(self, dataset_id: int) -> bool:
-        # experiments.*_dataset_id is ON DELETE SET NULL: the experiment keeps
-        # its denormalised domain names and only loses the catalogue link.
+        """Delete a dataset from the catalogue.
+
+        Note: Foreign keys in experiments source and target dataset references use ON DELETE SET NULL,
+        preserving historical experiments and their domain name strings.
+        """
         return self._db.execute("DELETE FROM datasets WHERE id = %s", (dataset_id,)) > 0
 
     def get(self, dataset_id: int) -> DatasetRecord | None:
+        """Fetch a single dataset record by primary key ID."""
         row = self._db.fetch_one("SELECT * FROM datasets WHERE id = %s", (dataset_id,))
         return _to_dataset(row) if row else None
 
     def get_by_path(self, source_path: str) -> DatasetRecord | None:
+        """Fetch a single dataset record by its unique source file path."""
         row = self._db.fetch_one(
             "SELECT * FROM datasets WHERE source_path = %s", (source_path,)
         )
         return _to_dataset(row) if row else None
 
     def list_all(self) -> list[DatasetRecord]:
+        """Fetch all registered datasets ordered from newest to oldest."""
         rows = self._db.fetch_all("SELECT * FROM datasets ORDER BY created_at DESC, id DESC")
         return [_to_dataset(row) for row in rows]
 
     def count(self) -> int:
+        """Return the total number of registered datasets."""
         row = self._db.fetch_one("SELECT count(*) AS total FROM datasets")
         return int(row["total"]) if row else 0
 

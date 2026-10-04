@@ -1,4 +1,4 @@
-"""PostgreSQL implementation of ``ExperimentRepository``."""
+"""PostgreSQL implementation of ExperimentRepository."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from domain.entities import ExperimentHistoryEntry, ExperimentRecord, Experiment
 from .database import Database
 from .postgres_mappers import _to_evaluation, _to_experiment, _to_user
 
+# Standard column selection for experiment records.
 _EXPERIMENT_COLUMNS = """
     user_id, source_dataset_id, target_dataset_id, source_domain, target_domain,
     tl_algorithm, classifier, normalization_type, standardization_type,
@@ -18,13 +19,15 @@ _EXPERIMENT_COLUMNS = """
 
 
 class PostgresExperimentRepository:
-    """CRUD for ``experiments`` plus the joined history read model."""
+    """Provides CRUD operations for experiments and joined history read models."""
 
     def __init__(self, database: Database) -> None:
+        """Initialize the experiment repository with a shared database manager."""
         self._db = database
 
     @staticmethod
     def _values(experiment: ExperimentRecord) -> tuple[Any, ...]:
+        """Convert an ExperimentRecord entity into a tuple for parameterized SQL queries."""
         return (
             experiment.user_id,
             experiment.source_dataset_id,
@@ -44,6 +47,14 @@ class PostgresExperimentRepository:
         )
 
     def add(self, experiment: ExperimentRecord) -> ExperimentRecord:
+        """Persist a new experiment record.
+
+        Args:
+            experiment: The experiment entity to insert.
+
+        Returns:
+            ExperimentRecord: The persisted entity with generated ID and default timestamps.
+        """
         row = self._db.execute_returning(
             f"""
             INSERT INTO experiments ({_EXPERIMENT_COLUMNS})
@@ -56,6 +67,17 @@ class PostgresExperimentRepository:
         return _to_experiment(row)
 
     def update(self, experiment: ExperimentRecord) -> ExperimentRecord:
+        """Update an existing experiment record.
+
+        Args:
+            experiment: The experiment entity containing updated field values.
+
+        Returns:
+            ExperimentRecord: The updated entity.
+
+        Raises:
+            ValueError: If the entity has no ID or the row is not found.
+        """
         if experiment.id is None:
             raise ValueError("Cannot update an experiment that has no id.")
         row = self._db.execute_returning(
@@ -78,25 +100,30 @@ class PostgresExperimentRepository:
     def set_status(
         self, experiment_id: int, status: str, error_message: str | None = None
     ) -> None:
-        """Move an experiment to a new state without rewriting the whole row."""
+        """Update the status and optional error message of an experiment without modifying other columns."""
         self._db.execute(
             "UPDATE experiments SET status = %s, error_message = %s WHERE id = %s",
             (ExperimentStatus(status).value, error_message, experiment_id),
         )
 
     def delete(self, experiment_id: int) -> bool:
-        # evaluations.experiment_id is ON DELETE CASCADE, so the scores go too.
+        """Delete an experiment record by ID.
+
+        Note: Associated evaluations are deleted automatically via ON DELETE CASCADE.
+        """
         return (
             self._db.execute("DELETE FROM experiments WHERE id = %s", (experiment_id,)) > 0
         )
 
     def get(self, experiment_id: int) -> ExperimentRecord | None:
+        """Fetch an experiment record by its primary key ID."""
         row = self._db.fetch_one(
             "SELECT * FROM experiments WHERE id = %s", (experiment_id,)
         )
         return _to_experiment(row) if row else None
 
     def list_all(self, user_id: int | None = None) -> list[ExperimentRecord]:
+        """Fetch all experiments, optionally filtered by user ID, ordered by date descending."""
         if user_id is None:
             rows = self._db.fetch_all(
                 "SELECT * FROM experiments ORDER BY date DESC, id DESC"
@@ -109,11 +136,17 @@ class PostgresExperimentRepository:
         return [_to_experiment(row) for row in rows]
 
     def history(self, user_id: int | None = None) -> list[ExperimentHistoryEntry]:
-        """Experiments with their owner and scores, newest first.
+        """Fetch aggregated experiment history entries including user and evaluation data.
 
-        One query with two LEFT JOINs rather than N+1 lookups while filling the
-        table. Columns are aliased because ``users.name`` and ``datasets.name``
-        would otherwise collide with each other in the flat result row.
+        Executes a single optimized query with LEFT JOIN operations across users
+        and evaluations to prevent N+1 query overhead. Column aliases avoid naming
+        collisions in the result set.
+
+        Args:
+            user_id: Optional user ID to filter history entries.
+
+        Returns:
+            list[ExperimentHistoryEntry]: Combined history view models sorted by date descending.
         """
         sql = """
             SELECT e.*,
@@ -200,6 +233,7 @@ class PostgresExperimentRepository:
         return entries
 
     def count(self) -> int:
+        """Return the total number of registered experiments."""
         row = self._db.fetch_one("SELECT count(*) AS total FROM experiments")
         return int(row["total"]) if row else 0
 

@@ -1,21 +1,15 @@
-"""PostgreSQL connection management and schema creation.
+"""PostgreSQL connection management, retry mechanisms, and schema deployment.
 
-Targets a Neon serverless database over ``psycopg2``. Three consequences of
-that hosting model shape this module:
-
-- **Neon scales to zero and drops idle connections.** A desktop app sits idle
-  for long stretches, so a single long-lived connection *will* be closed out
-  from under it. Every statement therefore goes through
-  :meth:`Database._execute_with_retry`, which reconnects and retries once when
-  the failure is a dropped connection (and never when it is a real SQL error).
-- **The first query after an idle period pays a cold-start delay.** Connecting
-  is done lazily and can fail, so callers get :class:`DatabaseUnavailable`
-  rather than a hard crash — the app stays usable without persistence.
-- **TLS is mandatory.** Handled in ``config.resolve_dsn``.
-
-Access is serialised with an ``RLock``: the use case runs on a QThread while
-the UI reads on the main thread, and a psycopg2 connection is not thread-safe
-for concurrent statements on the same cursor.
+Designed for serverless PostgreSQL (such as Neon) using psycopg2:
+- Automatic Reconnection and Retry: Neon scales to zero and terminates idle connections.
+  Queries routed through Database.run_in_transaction automatically reconnect
+  and retry once on transient connection drops (while failing fast on genuine SQL errors).
+- Non-blocking Lazy Initialization: Connections are opened on-demand, preventing
+  cold-start latency from delaying initial application rendering.
+- Thread Safety: Access is synchronized using a re-entrant lock (threading.RLock),
+  permitting background execution threads (for example, Qt worker threads) and UI readers to safely
+  interact with shared database handles.
+- Enforced Security: TLS and SSL enforcement is integrated during DSN resolution.
 """
 
 from __future__ import annotations
@@ -38,15 +32,20 @@ _T = TypeVar("_T")
 
 
 class Database:
-    """Owns the PostgreSQL connection and guarantees the schema exists.
+    """Manages the PostgreSQL connection lifecycle and schema state.
 
-    Construct once at start-up, hand to the repositories, :meth:`close` on
-    shutdown. Connecting is lazy — nothing touches the network until the first
-    statement — so a slow Neon cold start does not block the window from
-    appearing.
+    Instantiated during application startup and injected into domain repositories.
+    Connection instantiation is deferred until the first executed query to prevent
+    blocking GUI initialization.
     """
 
     def __init__(self, dsn: str | None = None, *, connect_timeout: int = 10) -> None:
+        """Initialize the database manager with an optional DSN and timeout.
+
+        Args:
+            dsn: Explicit connection string. If None, resolved via environment or .env.
+            connect_timeout: Network connection timeout in seconds.
+        """
         self._dsn = resolve_dsn(dsn)
         self._connect_timeout = connect_timeout
         self._lock = threading.RLock()
@@ -54,19 +53,24 @@ class Database:
         self._schema_ready = False
 
     # ------------------------------------------------------------------
+    # Connection Properties
+    # ------------------------------------------------------------------
     @property
     def dsn(self) -> str:
-        """The connection string, with the password masked."""
+        """Sanitized connection string with sensitive credentials masked."""
         return describe_dsn(self._dsn)
 
     @property
     def is_connected(self) -> bool:
+        """True if an active, unclosed connection is currently held."""
         with self._lock:
             return self._connection is not None and self._connection.closed == 0
 
     # ------------------------------------------------------------------
+    # Internal Connection Helpers
+    # ------------------------------------------------------------------
     def _connect(self) -> Any:
-        """Open a fresh connection. Caller must hold the lock."""
+        """Establish a new PostgreSQL connection. Caller must acquire self._lock."""
         if not PSYCOPG2_AVAILABLE:
             raise DatabaseUnavailable(
                 "The psycopg2 driver is not installed.\n\n"
@@ -79,7 +83,7 @@ class Database:
                 connect_timeout=self._connect_timeout,
                 cursor_factory=RealDictCursor,
             )
-        except Exception as exc:  # psycopg2.OperationalError and friends
+        except Exception as exc:  # psycopg2.OperationalError, socket timeouts, etc.
             raise DatabaseUnavailable(
                 f"Could not connect to PostgreSQL at {self.dsn}.\n\n{exc}"
             ) from exc
@@ -89,35 +93,46 @@ class Database:
         return connection
 
     def _ensure_connection(self) -> Any:
-        """Return a live connection, reconnecting if the old one died."""
+        """Return the active connection or establish a new one if closed or disconnected."""
         if self._connection is None or self._connection.closed != 0:
             return self._connect()
         return self._connection
 
     @staticmethod
     def _is_connection_error(exc: Exception) -> bool:
-        """Whether *exc* means "the link dropped" rather than "the SQL was bad".
+        """Determine whether an exception represents a dropped connection rather than a bad SQL statement.
 
-        Only the former is safe to retry: a dropped connection guarantees the
-        server rolled the transaction back, so replaying it cannot double-apply
-        a write. A constraint violation replayed would just fail again.
+        Connection drops are safe to retry because the server automatically rolls back
+        the interrupted transaction, avoiding duplicated writes.
         """
         if not PSYCOPG2_AVAILABLE:
             return False
         return isinstance(exc, (psycopg2.OperationalError, psycopg2.InterfaceError))
 
+    def _discard_connection(self) -> None:
+        """Close and discard the current connection reference to force a fresh connection."""
+        if self._connection is not None:
+            try:
+                self._connection.close()
+            except Exception:
+                pass
+        self._connection = None
+
+    # ------------------------------------------------------------------
+    # Schema and Lifecycle Management
+    # ------------------------------------------------------------------
     def connect(self) -> None:
-        """Open the connection and apply the schema. Raises DatabaseUnavailable."""
+        """Open the connection eagerly and execute all schema statements.
+
+        Raises:
+            DatabaseUnavailable: If the driver is missing or the database cannot be contacted.
+        """
         with self._lock:
             self._ensure_connection()
             self.create_schema()
 
     def create_schema(self) -> None:
-        """Create every table and index if absent. Safe to call repeatedly.
-
-        Runs as one transaction, so a database is never left half-migrated.
-        """
-
+        """Execute table and index creation statements atomically in a single transaction."""
         def operation(cursor: Any) -> None:
             for statement in SCHEMA_STATEMENTS:
                 cursor.execute(statement)
@@ -126,23 +141,25 @@ class Database:
         self._schema_ready = True
 
     # ------------------------------------------------------------------
+    # Transaction Execution
+    # ------------------------------------------------------------------
     def run_in_transaction(self, operation: Callable[[Any], _T]) -> _T:
-        """Run *operation(cursor)* in a transaction and return its result.
+        """Execute a callable inside a managed transaction and return its result.
 
-        Commits on success, rolls back on any exception — so a half-recorded
-        experiment (a row without its evaluation) can never reach the database.
+        Guarantees:
+        - Commits automatically on successful return.
+        - Rolls back on any unhandled exception.
+        - Automatically reconnects and retries the entire operation once if a transient
+          connection drop occurs (essential for serverless databases that scale to zero).
 
-        Reconnects and retries the **whole** operation once when the failure is
-        a dropped connection, which on Neon is routine rather than exceptional.
-        Retrying at this level rather than inside a context manager is
-        deliberate and necessary: a ``@contextmanager`` generator may only
-        yield once, so re-entering the ``with`` body after an exception has
-        been thrown into it raises ``RuntimeError: generator didn't stop after
-        throw()``. Taking the operation as a callable lets it simply be called
-        again.
+        Args:
+            operation: A callable accepting an active database cursor and returning a value.
 
-        Because the server rolls back an interrupted transaction, replaying it
-        cannot double-apply a write.
+        Returns:
+            The value returned by operation.
+
+        Raises:
+            DatabaseUnavailable: If connection cannot be established after retry.
         """
         with self._lock:
             last_error: Exception | None = None
@@ -157,7 +174,7 @@ class Database:
                     try:
                         connection.rollback()
                     except Exception:
-                        # Rollback on an already-dead connection is expected.
+                        # Rollback on a severed connection is expected to fail safely.
                         pass
                     if attempt == 1 and self._is_connection_error(exc):
                         self._discard_connection()
@@ -169,21 +186,17 @@ class Database:
                         cursor.close()
                     except Exception:
                         pass
-            # Both attempts hit a connection error.
+            # Both attempts encountered connection failures.
             raise DatabaseUnavailable(
                 f"Lost the connection to PostgreSQL at {self.dsn}.\n\n{last_error}"
             ) from last_error
 
     @contextmanager
     def transaction(self) -> Iterator[Any]:
-        """Yield a cursor inside a locked transaction.
+        """Context manager yielding a cursor within a synchronized transaction block.
 
-        Commits on success and rolls back on any exception. Unlike
-        :meth:`run_in_transaction` this does **not** retry a dropped
-        connection — it cannot, for the generator reason described above. It
-        does reconnect *before* yielding, so a connection that died while idle
-        is replaced transparently; only one that dies mid-transaction
-        surfaces as an error. Prefer :meth:`run_in_transaction` for writes.
+        Commits on normal exit and rolls back on exception. Reconnects before yielding
+        if the connection was dropped while idle.
         """
         with self._lock:
             connection = self._ensure_connection()
@@ -203,19 +216,11 @@ class Database:
                 except Exception:
                     pass
 
-    def _discard_connection(self) -> None:
-        """Drop a dead connection so the next call opens a fresh one."""
-        if self._connection is not None:
-            try:
-                self._connection.close()
-            except Exception:
-                pass
-        self._connection = None
-
+    # ------------------------------------------------------------------
+    # Query Execution Helpers
     # ------------------------------------------------------------------
     def fetch_all(self, sql: str, params: Sequence[Any] = ()) -> list[dict[str, Any]]:
-        """Run a SELECT and return every row as a plain dict."""
-
+        """Execute a SELECT query and return all matching rows as dictionaries."""
         def operation(cursor: Any) -> list[dict[str, Any]]:
             cursor.execute(sql, tuple(params))
             return [dict(row) for row in cursor.fetchall()]
@@ -223,6 +228,7 @@ class Database:
         return self.run_in_transaction(operation)
 
     def fetch_one(self, sql: str, params: Sequence[Any] = ()) -> dict[str, Any] | None:
+        """Execute a SELECT query and return the first matching row or None."""
         def operation(cursor: Any) -> dict[str, Any] | None:
             cursor.execute(sql, tuple(params))
             row = cursor.fetchone()
@@ -231,8 +237,7 @@ class Database:
         return self.run_in_transaction(operation)
 
     def execute(self, sql: str, params: Sequence[Any] = ()) -> int:
-        """Run a write and return the number of affected rows."""
-
+        """Execute an INSERT, UPDATE, or DELETE query and return the affected row count."""
         def operation(cursor: Any) -> int:
             cursor.execute(sql, tuple(params))
             return cursor.rowcount
@@ -242,13 +247,11 @@ class Database:
     def execute_returning(
         self, sql: str, params: Sequence[Any] = ()
     ) -> dict[str, Any] | None:
-        """Run a write with a ``RETURNING`` clause and hand back that row.
+        """Execute a write statement with a RETURNING clause and return the resulting row dictionary.
 
-        Postgres' ``RETURNING`` replaces SQLite's ``lastrowid`` and is race
-        free — the generated id comes back from the same statement that
-        produced it.
+        Uses PostgreSQL's atomic RETURNING clause to reliably obtain auto-generated IDs
+        and column defaults without race conditions.
         """
-
         def operation(cursor: Any) -> dict[str, Any] | None:
             cursor.execute(sql, tuple(params))
             row = cursor.fetchone()
@@ -257,8 +260,10 @@ class Database:
         return self.run_in_transaction(operation)
 
     # ------------------------------------------------------------------
+    # Diagnostic and Lifecycle Utilities
+    # ------------------------------------------------------------------
     def table_names(self) -> list[str]:
-        """Tables in the current schema, for diagnostics and tests."""
+        """Return the names of all tables in the current schema for diagnostics and testing."""
         rows = self.fetch_all(
             "SELECT tablename FROM pg_tables WHERE schemaname = current_schema() "
             "ORDER BY tablename"
@@ -266,13 +271,14 @@ class Database:
         return [row["tablename"] for row in rows]
 
     def drop_all(self) -> None:
-        """Remove every table. Used by the tests; never called by the app."""
+        """Drop all application tables and reset schema status (used primarily in test suites)."""
         self.execute(
             "DROP TABLE IF EXISTS evaluations, experiments, datasets, users CASCADE"
         )
         self._schema_ready = False
 
     def close(self) -> None:
+        """Close the active database connection."""
         with self._lock:
             self._discard_connection()
 
@@ -283,9 +289,7 @@ class Database:
         self.close()
 
 
-#: ``SCHEMA_STATEMENTS``, the driver flags, and ``DatabaseUnavailable`` are
-#: re-exported from their own modules so existing ``from .database import ...``
-#: sites keep working after the split.
+# Re-export driver status flags and schema statements for backward compatibility.
 __all__ = [
     "PSYCOPG2_AVAILABLE",
     "PSYCOPG2_IMPORT_ERROR",

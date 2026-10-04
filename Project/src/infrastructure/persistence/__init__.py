@@ -1,7 +1,16 @@
-"""PostgreSQL-backed implementations of the domain repository protocols.
+"""PostgreSQL-backed implementations of domain repository protocols.
 
-Targets a Neon serverless database; see ``config.py`` for where the connection
-string is read from and ``database.py`` for the schema.
+Provides concrete repository implementations targeting PostgreSQL (optimized for
+Neon serverless):
+- config: DSN resolution and .env configuration parsing.
+- driver: Dynamic psycopg2 import shim and driver availability flags.
+- schema: Database DDL statements and migration definitions.
+- database: Connection lifecycle, transaction management, and automatic retry.
+- postgres_mappers: Database row to domain entity conversion helpers.
+- postgres_user_repository: User entity persistence.
+- postgres_dataset_repository: Dataset metadata catalogue persistence.
+- postgres_experiment_repository: Experiment record and history persistence.
+- postgres_evaluation_repository: Evaluation score and metric persistence.
 """
 
 from .config import DatabaseConfigError, describe_dsn, resolve_dsn

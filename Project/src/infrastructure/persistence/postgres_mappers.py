@@ -1,7 +1,8 @@
-"""Row-to-entity mapping shared by the ``Postgres*Repository`` classes.
+"""Row-to-entity data mapping functions for PostgreSQL repositories.
 
-Row-to-entity mapping happens here and nowhere else: everything above this
-module deals in the dataclasses from ``domain.entities``.
+Transforms raw dictionary rows returned by database queries into domain dataclasses
+defined in domain.entities, maintaining a clean boundary between SQL storage
+and core business logic.
 """
 
 from __future__ import annotations
@@ -22,10 +23,9 @@ from .driver import pg_errors
 
 
 def _as_list(value: Any) -> list[str]:
-    """Normalise a ``TEXT[]`` column to a list of strings.
+    """Convert a PostgreSQL array column (TEXT[]) or arbitrary sequence to a list of strings.
 
-    psycopg2 already returns a Python list for array columns; this guards the
-    ``NULL`` case and anything hand-inserted as a scalar.
+    Handles NULL values and scalar fallbacks safely.
     """
     if value is None:
         return []
@@ -35,6 +35,7 @@ def _as_list(value: Any) -> list[str]:
 
 
 def _to_user(row: dict[str, Any]) -> User:
+    """Map a users table database row to a User entity instance."""
     return User(
         id=row["id"],
         name=row["name"],
@@ -46,6 +47,7 @@ def _to_user(row: dict[str, Any]) -> User:
 
 
 def _to_dataset(row: dict[str, Any]) -> DatasetRecord:
+    """Map a datasets table database row to a DatasetRecord entity instance."""
     return DatasetRecord(
         id=row["id"],
         name=row["name"],
@@ -64,6 +66,7 @@ def _to_dataset(row: dict[str, Any]) -> DatasetRecord:
 
 
 def _to_experiment(row: dict[str, Any]) -> ExperimentRecord:
+    """Map an experiments table database row to an ExperimentRecord entity instance."""
     return ExperimentRecord(
         id=row["id"],
         user_id=row.get("user_id"),
@@ -85,6 +88,7 @@ def _to_experiment(row: dict[str, Any]) -> ExperimentRecord:
 
 
 def _to_evaluation(row: dict[str, Any]) -> EvaluationRecord:
+    """Map an evaluations table database row to an EvaluationRecord entity instance."""
     return EvaluationRecord(
         id=row["id"],
         experiment_id=row["experiment_id"],
@@ -95,8 +99,8 @@ def _to_evaluation(row: dict[str, Any]) -> EvaluationRecord:
         total_samples=row.get("total_samples") or 0,
         correct_predictions=row.get("correct_predictions") or 0,
         wrong_predictions=row.get("wrong_predictions") or 0,
-        # .get(), not "or": these are legitimately NULL on older rows, and
-        # "or" would turn a real stored 0.0 into None.
+        # Note: Uses .get() rather than or for nullable metrics to avoid masking
+        # valid numeric zero readings (such as 0.0 accuracy or AUC) as None.
         auc=row.get("auc"),
         overlap_before=row.get("overlap_before"),
         overlap_after=row.get("overlap_after"),
@@ -111,7 +115,7 @@ def _to_evaluation(row: dict[str, Any]) -> EvaluationRecord:
 
 
 def _is_unique_violation(exc: Exception) -> bool:
-    """Whether *exc* is a duplicate-key error rather than any other failure."""
+    """Check whether an exception is a PostgreSQL unique constraint violation (duplicate key error)."""
     if pg_errors is None:
         return False
     return isinstance(exc, pg_errors.UniqueViolation)

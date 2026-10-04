@@ -1,17 +1,32 @@
-"""Where the PostgreSQL connection details come from.
+"""PostgreSQL connection configuration and DSN resolution.
 
-Credentials are never written into the source tree. They are resolved, in
-order of precedence:
+Credentials are never hardcoded in the source tree. Connection details are
+resolved in the following order of precedence:
 
-1. an explicit DSN passed to :func:`resolve_dsn`,
-2. the ``DATABASE_URL`` environment variable — this is the connection string
-   Neon hands you on the project dashboard,
-3. a ``DATABASE_URL`` line in ``Project/.env`` (gitignored),
-4. the individual ``PGHOST`` / ``PGDATABASE`` / ``PGUSER`` / ``PGPASSWORD`` /
-   ``PGPORT`` / ``PGSSLMODE`` variables, assembled into a DSN.
+1. Explicit DSN:
+   Passed directly to resolve_dsn (used by tests to target a scratch
+   database without touching the environment).
 
-The tiny ``.env`` reader below exists so the project does not need
-``python-dotenv`` for a single line of configuration.
+2. DATABASE_URL Environment Variable:
+   Read from the system environment (for example, the connection string provided on
+   the Neon project dashboard).
+
+3. DATABASE_URL in a .env File:
+   Read from a local, gitignored .env file (discovered beside the app
+   executable, in the current working directory, or at the project root).
+
+4. Individual PG* Variables:
+   Assembled into a connection DSN from discrete variables (found in the system
+   environment or .env):
+   - PGHOST (required)
+   - PGDATABASE (required)
+   - PGUSER (default: postgres)
+   - PGPASSWORD (default: empty string)
+   - PGPORT (default: 5432)
+   - PGSSLMODE (default: require)
+
+A lightweight built-in .env parser is used below to avoid adding an
+external dependency on python-dotenv for basic configuration reading.
 """
 
 from __future__ import annotations
@@ -21,64 +36,72 @@ import sys
 from pathlib import Path
 from urllib.parse import quote_plus
 
-#: Source checkout configuration file (works when running from source).
+# Default source checkout configuration file path (used when running directly from source).
 ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 
 def _env_file_candidates() -> tuple[Path, ...]:
-    """Return configuration locations for source and frozen app launches.
+    """Return candidate paths for locating the .env configuration file.
 
-    In a PyInstaller one-file build ``__file__`` resolves inside a temporary
-    extraction directory (``/tmp/_MEIxxxxxx/…``), so ``ENV_FILE`` above will
-    miss the real ``.env``.  The frozen executable's own directory — obtained
-    via ``sys.executable`` — is the most natural place for users to drop a
-    ``.env`` beside the app, so it is checked first.  The current working
-    directory is checked as a fallback for double-click launches that set CWD
-    to the file manager's current folder.
+    Handles both standard source execution and frozen PyInstaller single-binary launches:
+    1. Executable Directory: Next to sys.executable (works for frozen bundles and virtualenvs).
+    2. PyInstaller MEIPASS: Temporary extraction folder if bundled as app data (sys._MEIPASS).
+    3. Script Directory: Directory of sys.argv[0] (for symlinks or desktop launchers).
+    4. Working Directory: Current working directory (Path.cwd()).
+    5. Source Root: Project root directory (ENV_FILE).
+
+    Returns:
+        tuple[Path, ...]: De-duplicated list of candidate file paths in priority order.
     """
     candidates: list[Path] = []
 
-    # 1. Next to the actual executable (works for both frozen and source).
+    # 1. Next to the actual executable (works for both frozen and source runs).
     executable_dir = Path(sys.executable).resolve().parent
     candidates.append(executable_dir / ".env")
 
-    # 2. For frozen one-file builds, bundled data files (including .env
-    #    added via the spec's datas list) are extracted to sys._MEIPASS.
+    # 2. For frozen one-file builds, bundled data files are extracted to sys._MEIPASS.
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             candidates.append(Path(meipass) / ".env")
 
-        # argv[0] may differ from sys.executable when launched via a
-        # symlink or .desktop wrapper.
+        # argv[0] may differ from sys.executable when launched via a symlink or desktop wrapper.
         argv0_dir = Path(sys.argv[0]).resolve().parent
         candidates.append(argv0_dir / ".env")
 
-        # Also check CWD — a user who cd's into the app folder and runs
-        # ./Adapta will have .env sitting right there.
+        # Also check current working directory (e.g. running ./Adapta directly from shell).
         candidates.append(Path.cwd() / ".env")
 
-    # 3. Source-checkout location (only meaningful when running from source).
+    # 3. Source-checkout location (meaningful when running directly from Python source).
     candidates.append(ENV_FILE)
 
-    # De-duplicate while preserving order.
+    # De-duplicate while preserving discovery order.
     return tuple(dict.fromkeys(candidates))
 
-#: Neon terminates unencrypted connections, so this is the floor, not a
-#: preference. Overridable via ``PGSSLMODE`` for a local server.
+
+# Default SSL mode. Neon terminates unencrypted connections, so SSL is enforced
+# by default unless overridden via PGSSLMODE (e.g., for local development).
 DEFAULT_SSLMODE = "require"
 
 
 class DatabaseConfigError(RuntimeError):
-    """Raised when no connection details could be found at all."""
+    """Raised when database connection details cannot be resolved from any source."""
 
 
 def load_env_file(path: Path | None = None) -> dict[str, str]:
-    """Parse a minimal ``KEY=value`` file. Missing file yields ``{}``.
+    """Parse a minimal KEY=value configuration file.
 
-    Deliberately small: blank lines, ``#`` comments, an optional ``export``
-    prefix, and surrounding quotes. Anything more elaborate belongs in a real
-    dotenv library.
+    Supports simple .env syntax:
+    - Skips blank lines and comment lines (starting with #).
+    - Strips optional export prefixes.
+    - Strips matching single or double surrounding quotes.
+    - Returns an empty dictionary if the file does not exist.
+
+    Args:
+        path: Explicit path to a .env file. If None, checks candidate locations.
+
+    Returns:
+        dict[str, str]: Parsed key-value configuration pairs.
     """
     paths = (path,) if path is not None else _env_file_candidates()
 
@@ -106,16 +129,17 @@ def load_env_file(path: Path | None = None) -> dict[str, str]:
 
 
 def _lookup(key: str, env_file: dict[str, str]) -> str | None:
-    """Real environment first, then the ``.env`` fallback."""
+    """Retrieve a configuration value, prioritizing OS environment over .env."""
     value = os.environ.get(key) or env_file.get(key)
     return value.strip() if value and value.strip() else None
 
 
 def _dsn_from_parts(env_file: dict[str, str]) -> str | None:
-    """Assemble a DSN from the individual ``PG*`` variables.
+    """Assemble a PostgreSQL DSN from individual PG* configuration variables.
 
-    Requires at least a host and a database name; anything less is treated as
-    "not configured" rather than guessed at.
+    Requires at minimum PGHOST and PGDATABASE to be set; returns None
+    otherwise so fallback handling or informative errors can be triggered.
+    Escapes user and password characters to prevent URI parsing errors.
     """
     host = _lookup("PGHOST", env_file)
     database = _lookup("PGDATABASE", env_file)
@@ -127,8 +151,8 @@ def _dsn_from_parts(env_file: dict[str, str]) -> str | None:
     port = _lookup("PGPORT", env_file) or "5432"
     sslmode = _lookup("PGSSLMODE", env_file) or DEFAULT_SSLMODE
 
-    # Passwords routinely contain ``@``, ``/`` and ``:``; without escaping,
-    # those silently corrupt the URL's authority section.
+    # Passwords routinely contain characters like @, /, and :; without URL-encoding,
+    # those would corrupt the authority component of the connection string.
     credentials = quote_plus(user)
     if password:
         credentials += f":{quote_plus(password)}"
@@ -137,10 +161,22 @@ def _dsn_from_parts(env_file: dict[str, str]) -> str | None:
 
 
 def resolve_dsn(explicit: str | None = None) -> str:
-    """Return the connection string to use, or raise :class:`DatabaseConfigError`.
+    """Resolve and return the active PostgreSQL connection string (DSN).
 
-    ``explicit`` wins when given, which is how the tests point at a scratch
-    database without touching the environment.
+    Resolution Order:
+    1. Explicit argument (explicit).
+    2. DATABASE_URL environment variable.
+    3. DATABASE_URL in the discovered .env file.
+    4. Individual PGHOST, PGDATABASE, etc. variables.
+
+    Args:
+        explicit: Optional connection string override (used for testing scratch databases).
+
+    Returns:
+        str: Fully-qualified PostgreSQL DSN.
+
+    Raises:
+        DatabaseConfigError: If no valid connection configuration could be found.
     """
     if explicit and explicit.strip():
         return explicit.strip()
@@ -164,11 +200,10 @@ def resolve_dsn(explicit: str | None = None) -> str:
 
 
 def _ensure_sslmode(dsn: str) -> str:
-    """Append ``sslmode=require`` when the URL omits it.
+    """Ensure sslmode=require is present on remote connection strings.
 
-    A Neon URL pasted without its query string fails to connect with an
-    obscure server-side error; defaulting it here turns that into a working
-    connection.
+    If a remote Neon URL is pasted without a query string, it defaults to unencrypted
+    and fails on the server side. Localhost and 127.0.0.1 connections are left unmodified.
     """
     if "sslmode=" in dsn:
         return dsn
@@ -180,7 +215,7 @@ def _ensure_sslmode(dsn: str) -> str:
 
 
 def describe_dsn(dsn: str) -> str:
-    """A log/UI-safe rendering of *dsn* with the password removed."""
+    """Return a sanitized connection string with credentials masked for logs and UI display."""
     if "://" not in dsn:
         return dsn
     scheme, _, remainder = dsn.partition("://")

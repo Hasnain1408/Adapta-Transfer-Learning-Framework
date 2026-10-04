@@ -1,20 +1,20 @@
-"""psycopg2 import shim and the "no database" error.
+"""Dynamic import shim for the PostgreSQL driver (psycopg2).
 
-Isolated so every module can ask whether the driver is present without
-importing the connection machinery — ``postgres_mappers`` needs only the
-``PSYCOPG2_AVAILABLE`` flag and the error classes, not ``Database``.
+Isolates psycopg2 imports and error handling so other persistence modules
+(such as mappers or repositories) can inspect driver availability and catch
+database errors without triggering premature connection attempts.
 """
 
 from __future__ import annotations
 
-try:  # pragma: no cover - exercised only when the driver is absent
+try:  # pragma: no cover - exercised only when psycopg2 is installed
     import psycopg2
     from psycopg2 import errors as pg_errors
     from psycopg2.extras import RealDictCursor
 
     PSYCOPG2_AVAILABLE = True
     PSYCOPG2_IMPORT_ERROR: str | None = None
-except ImportError as exc:  # pragma: no cover
+except ImportError as exc:  # pragma: no cover - fallback when psycopg2 is missing
     psycopg2 = None  # type: ignore[assignment]
     pg_errors = None  # type: ignore[assignment]
     RealDictCursor = None  # type: ignore[assignment]
@@ -23,10 +23,10 @@ except ImportError as exc:  # pragma: no cover
 
 
 class DatabaseUnavailable(RuntimeError):
-    """The database could not be reached or the driver is not installed.
+    """Raised when PostgreSQL cannot be reached or the driver is missing.
 
-    Distinct from a SQL error: the app catches this to run in a degraded,
-    persistence-free mode instead of refusing to start.
+    Distinct from query or syntax errors: the desktop application catches this exception
+    to enter a graceful, persistence-free degraded mode rather than crashing on launch.
     """
 
 
