@@ -17,12 +17,52 @@ The tiny ``.env`` reader below exists so the project does not need
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from urllib.parse import quote_plus
 
-#: ``Project/.env`` — resolved from this file so it is found regardless of the
-#: working directory the app was launched from.
+#: Source checkout configuration file (works when running from source).
 ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+
+
+def _env_file_candidates() -> tuple[Path, ...]:
+    """Return configuration locations for source and frozen app launches.
+
+    In a PyInstaller one-file build ``__file__`` resolves inside a temporary
+    extraction directory (``/tmp/_MEIxxxxxx/…``), so ``ENV_FILE`` above will
+    miss the real ``.env``.  The frozen executable's own directory — obtained
+    via ``sys.executable`` — is the most natural place for users to drop a
+    ``.env`` beside the app, so it is checked first.  The current working
+    directory is checked as a fallback for double-click launches that set CWD
+    to the file manager's current folder.
+    """
+    candidates: list[Path] = []
+
+    # 1. Next to the actual executable (works for both frozen and source).
+    executable_dir = Path(sys.executable).resolve().parent
+    candidates.append(executable_dir / ".env")
+
+    # 2. For frozen one-file builds, bundled data files (including .env
+    #    added via the spec's datas list) are extracted to sys._MEIPASS.
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / ".env")
+
+        # argv[0] may differ from sys.executable when launched via a
+        # symlink or .desktop wrapper.
+        argv0_dir = Path(sys.argv[0]).resolve().parent
+        candidates.append(argv0_dir / ".env")
+
+        # Also check CWD — a user who cd's into the app folder and runs
+        # ./Adapta will have .env sitting right there.
+        candidates.append(Path.cwd() / ".env")
+
+    # 3. Source-checkout location (only meaningful when running from source).
+    candidates.append(ENV_FILE)
+
+    # De-duplicate while preserving order.
+    return tuple(dict.fromkeys(candidates))
 
 #: Neon terminates unencrypted connections, so this is the floor, not a
 #: preference. Overridable via ``PGSSLMODE`` for a local server.
@@ -33,31 +73,35 @@ class DatabaseConfigError(RuntimeError):
     """Raised when no connection details could be found at all."""
 
 
-def load_env_file(path: Path = ENV_FILE) -> dict[str, str]:
+def load_env_file(path: Path | None = None) -> dict[str, str]:
     """Parse a minimal ``KEY=value`` file. Missing file yields ``{}``.
 
     Deliberately small: blank lines, ``#`` comments, an optional ``export``
     prefix, and surrounding quotes. Anything more elaborate belongs in a real
     dotenv library.
     """
-    if not path.is_file():
-        return {}
+    paths = (path,) if path is not None else _env_file_candidates()
 
     values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    for path in paths:
+        if not path.is_file():
             continue
-        if line.startswith("export "):
-            line = line[len("export ") :].lstrip()
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip()
-        # Strip one matched pair of surrounding quotes, if present.
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        if key:
-            values[key] = value
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export ") :].lstrip()
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            # Strip one matched pair of surrounding quotes, if present.
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            if key:
+                values[key] = value
+        if values:
+            break
     return values
 
 
@@ -114,7 +158,7 @@ def resolve_dsn(explicit: str | None = None) -> str:
     raise DatabaseConfigError(
         "No PostgreSQL connection details found.\n\n"
         "Set DATABASE_URL to your Neon connection string, either as an "
-        f"environment variable or in {ENV_FILE}:\n\n"
+        "environment variable or in a .env file beside the application:\n\n"
         "    DATABASE_URL=postgresql://user:password@host.neon.tech/dbname?sslmode=require\n"
     )
 
