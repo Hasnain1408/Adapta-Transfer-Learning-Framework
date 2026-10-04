@@ -1,12 +1,9 @@
-"""Dataset loader interface and the composite that routes by file extension.
+"""Dataset loader interface and composite dispatcher routing by file extension.
 
-Each concrete loader (``CSVDatasetLoader``, ``XLSXDatasetLoader``,
-``MATDatasetLoader``, ``ARFFDatasetLoader``) owns exactly one file format.
-``DatasetFormatLoader`` is the interface they implement; ``DatasetLoader`` is
-the composite that dispatches a path to the right one by its suffix and is
-the single object the rest of the app depends on — it is what gets wired
-into ``RunTransferLearningUseCase`` and structurally satisfies
-``domain.interfaces.DatasetLoader``.
+Each concrete loader (CSVDatasetLoader, XLSXDatasetLoader, MATDatasetLoader,
+ARFFDatasetLoader) handles a specific file format. DatasetFormatLoader defines the
+shared base interface, while DatasetLoader acts as the composite dispatcher that
+selects the appropriate loader based on the file suffix.
 """
 
 from __future__ import annotations
@@ -20,23 +17,45 @@ from domain.models import Dataset
 
 
 class DatasetFormatLoader(ABC):
-    """Base for a loader that owns exactly one file format.
+    """Abstract base class for format-specific dataset loaders.
 
-    ``extensions`` names the lowercase, dot-prefixed suffixes this loader
-    claims (e.g. ``(".csv",)``) — ``DatasetLoader`` uses it to route a path
-    to the right concrete loader.
+    Subclasses specify claimed lowercase, dot-prefixed file extensions (such as .csv)
+    in the extensions tuple.
     """
 
     extensions: tuple[str, ...] = ()
 
     @abstractmethod
     def load(self, path: str, is_source: bool = True) -> Dataset:
+        """Load and parse the dataset file into a domain Dataset model.
+
+        Args:
+            path: Absolute or relative path to the dataset file.
+            is_source: True if loading as the source domain, False for target domain.
+
+        Returns:
+            Dataset: Loaded domain entity containing feature matrix and label vector.
+        """
         raise NotImplementedError
 
     @staticmethod
     def _dataframe_to_dataset(dataframe: pd.DataFrame) -> Dataset:
-        """Shared by the tabular formats (CSV, XLSX, ARFF): the last column is
-        the label, every other column is coerced to numeric with NaN -> 0.0.
+        """Convert a pandas DataFrame into a domain Dataset model.
+
+        Shared conversion logic for tabular datasets (CSV, Excel, ARFF):
+        - Treats the trailing column as the ground-truth label vector.
+        - Treats all preceding columns as feature attributes.
+        - Coerces non-numeric feature entries to numeric floats with NaN replacement.
+        - Tracks missing values and column data types.
+
+        Args:
+            dataframe: Tabular dataset loaded as a DataFrame.
+
+        Returns:
+            Dataset: Normalized domain model.
+
+        Raises:
+            ValueError: If the table has fewer than 2 columns.
         """
         if dataframe.shape[1] < 2:
             raise ValueError("Dataset must have at least 2 columns: features + label column.")
@@ -61,31 +80,51 @@ class DatasetFormatLoader(ABC):
 
 
 class DatasetLoader:
-    """Routes ``load``/``has_combined_domains`` to the loader for a path's extension.
+    """Composite dataset loader that delegates parsing to format-specific loaders.
 
-    This is the concrete object wired into ``RunTransferLearningUseCase`` —
-    everything above ``infrastructure`` depends only on this, never on a
-    specific format loader, so adding a format means adding one
-    ``DatasetFormatLoader`` and listing it here rather than touching any
-    caller.
+    Serves as the single dataset loading dependency for application use cases.
+    New formats can be supported by registering a new DatasetFormatLoader instance
+    without altering existing business logic.
     """
 
     def __init__(self, loaders: list[DatasetFormatLoader]) -> None:
+        """Initialize the composite loader with a list of format loaders.
+
+        Args:
+            loaders: List of concrete format loader instances.
+        """
         self._by_extension: dict[str, DatasetFormatLoader] = {}
         for loader in loaders:
             for extension in loader.extensions:
                 self._by_extension[extension] = loader
 
     def load(self, path: str, is_source: bool = True) -> Dataset:
+        """Route the file path to its registered format loader and return the loaded Dataset.
+
+        Args:
+            path: Path to the dataset file.
+            is_source: True if loading as source domain, False for target domain.
+
+        Returns:
+            Dataset: Parsed domain dataset entity.
+
+        Raises:
+            ValueError: If the file extension is not supported by any registered loader.
+        """
         loader = self._loader_for(path)
         return loader.load(path, is_source=is_source)
 
     def has_combined_domains(self, path: str) -> bool:
-        """True when *path* alone carries both a source and a target half.
+        """Check whether a single dataset file contains both source and target domains.
 
-        Delegates to the matched loader when it supports the check (only
-        ``MATDatasetLoader`` does today); every other format reports
-        ``False``, meaning "use two files".
+        Delegates check to the matched format loader if supported (e.g. MATDatasetLoader).
+        Returns False for formats requiring separate source and target files.
+
+        Args:
+            path: Path to the dataset file.
+
+        Returns:
+            bool: True if the file contains combined domain splits, False otherwise.
         """
         extension = Path(path).suffix.lower()
         loader = self._by_extension.get(extension)
@@ -93,6 +132,7 @@ class DatasetLoader:
         return bool(checker(path)) if checker is not None else False
 
     def _loader_for(self, path: str) -> DatasetFormatLoader:
+        """Retrieve the registered format loader matching the file extension."""
         extension = Path(path).suffix.lower()
         loader = self._by_extension.get(extension)
         if loader is None:

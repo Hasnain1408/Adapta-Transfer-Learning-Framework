@@ -1,3 +1,5 @@
+"""MATLAB matrix dataset format loader implementation."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,28 +10,28 @@ import scipy.io as sio
 from domain.models import Dataset
 from infrastructure.data.dataset_loader import DatasetFormatLoader
 
-#: Keys that unambiguously mark a domain as source/target within a .mat file,
-#: as opposed to the generic fallback keys ('fea', 'X', 'label', ...) that a
-#: single-domain file also matches under *either* role. Only these decide
-#: whether a file carries both halves — see ``has_combined_domains``.
+# Keys that unambiguously mark a domain as source or target within a .mat file,
+# distinguishing dual-domain files from single-domain files that use generic key names.
 _SOURCE_ONLY_X_KEYS = ("X_src", "Xs")
 _TARGET_ONLY_X_KEYS = ("X_tar", "Xt", "tar_fea")
 
 
 class MATDatasetLoader(DatasetFormatLoader):
-    """Loads a MATLAB ``.mat`` file, sniffing common source/target key names."""
+    """Loads MATLAB matrix files (.mat), detecting domain keys and matrix orientations."""
 
     extensions = (".mat",)
 
     def has_combined_domains(self, path: str) -> bool:
-        """True when *path* alone carries both a source and a target half.
+        """Check whether the MATLAB file contains both source and target domains.
 
-        COIL20 and MNIST<->USPS ship this way: one .mat file with X_src/Y_src
-        *and* X_tar/Y_tar side by side, meant to be run without picking a
-        second file. Deliberately checks only the source/target-specific key
-        names, not the generic fallbacks ``load`` also accepts (`fea`, `X`,
-        `label`, ...) — a plain single-domain file matches those under
-        *either* ``is_source`` value, which would misreport it as combined.
+        Recognizes benchmark datasets (such as COIL20 or MNIST-USPS) packaged with
+        source and target feature and label matrices within the same file.
+
+        Args:
+            path: Path to the .mat file.
+
+        Returns:
+            bool: True if both source-specific and target-specific keys are present.
         """
         if Path(path).suffix.lower() != ".mat":
             return False
@@ -42,6 +44,21 @@ class MATDatasetLoader(DatasetFormatLoader):
         return has_source and has_target
 
     def load(self, path: str, is_source: bool = True) -> Dataset:
+        """Parse a MATLAB file and return a domain Dataset entity.
+
+        Performs key heuristic searching, fallback matrix discovery, dimension alignment,
+        and missing value counting.
+
+        Args:
+            path: Path to the .mat file.
+            is_source: True if extracting the source domain partition, False for target.
+
+        Returns:
+            Dataset: Loaded domain dataset entity.
+
+        Raises:
+            ValueError: If feature matrices or label vectors cannot be identified or aligned.
+        """
         mat_data = sio.loadmat(path)
 
         if is_source:
@@ -54,6 +71,7 @@ class MATDatasetLoader(DatasetFormatLoader):
         features = None
         labels = None
 
+        # 1. Match known domain-specific or conventional keys.
         for k in x_keys:
             if k in mat_data:
                 features = mat_data[k]
@@ -64,6 +82,7 @@ class MATDatasetLoader(DatasetFormatLoader):
                 labels = mat_data[k]
                 break
 
+        # 2. Heuristic fallback for features: select largest 2D numerical array.
         if features is None:
             arrays = {
                 k: v
@@ -76,6 +95,7 @@ class MATDatasetLoader(DatasetFormatLoader):
         if features is None:
             raise ValueError("Could not find feature matrix in the given .mat file.")
 
+        # 3. Heuristic fallback for labels: select largest 1D or single-column array.
         if labels is None:
             arrays = {
                 k: v
@@ -90,6 +110,7 @@ class MATDatasetLoader(DatasetFormatLoader):
 
         labels = labels.flatten()
 
+        # 4. Align matrix orientation (samples x features vs features x samples).
         if features.shape[0] == labels.shape[0]:
             pass
         elif features.shape[1] == labels.shape[0]:
