@@ -6,8 +6,8 @@ default other fragments override.
 
 from __future__ import annotations
 
-#: QSS fragment; concatenated into the one ``string.Template`` built in
-#: ``style.py``. ``$token`` placeholders are substituted from the palette
+#: QSS fragment; concatenated into the one string.Template built in
+#: style.py. $token placeholders are substituted from the palette
 #: there, so this stays a plain string and is never substituted alone.
 BASE_QSS = """
 /* ---------- Base ---------- */

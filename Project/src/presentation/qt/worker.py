@@ -14,11 +14,11 @@ from domain.run_control import RunCancelled, RunControl
 class _ProgressReportingWorker(QThread):
     """Shared plumbing for the two workers: signals plus progress relay.
 
-    ``progress`` carries a ``ProgressUpdate``. It is emitted from *this*
+    progress carries a ProgressUpdate. It is emitted from *this*
     thread, but the worker object itself lives on the UI thread, so Qt's
     automatic connection type queues each emission onto the UI event loop —
     which is the only reason it is safe to touch widgets in the slot.
-    Relaying through a signal is also why ``RunControl``'s listener may be
+    Relaying through a signal is also why RunControl's listener may be
     called from the worker thread at all: the emit itself is thread-safe
     and returns immediately without running the slot inline.
     """

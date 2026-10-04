@@ -1,6 +1,6 @@
 """Small reusable widgets the main window composes.
 
-Plain ``QWidget`` subclasses with no knowledge of ``MainWindow`` — they
+Plain QWidget subclasses with no knowledge of MainWindow — they
 take what they need through their constructor, so they can be read (and
 reused) without the window around them.
 """
@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import QLineEdit, QMainWindow, QVBoxLayout, QWidget
 from presentation.qt.title_bar import TitleBar
 
 class ClickableLineEdit(QLineEdit):
-    """Read-only line edit that emits ``clicked`` on any mouse press.
+    """Read-only line edit that emits clicked on any mouse press.
 
     Used for the dataset path fields so clicking anywhere in the field opens
     the file browser dialog, not just the adjacent "Browse…" button.

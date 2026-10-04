@@ -1,7 +1,7 @@
-"""Result rendering for ``MainWindow``: metrics, predictions, features, fullscreen.
+"""Result rendering for MainWindow: metrics, predictions, features, fullscreen.
 
-Populates the widgets ``MainWindowUIMixin`` builds once a run has finished —
-called from ``MainWindowRunMixin``'s success handlers. Kept separate from run
+Populates the widgets MainWindowUIMixin builds once a run has finished —
+called from MainWindowRunMixin's success handlers. Kept separate from run
 orchestration because rendering has no opinion on *how* a result was
 produced (single run vs. one pair of a batch).
 """
@@ -26,7 +26,7 @@ class MainWindowResultsMixin:
         """Fill the four metric cards and the caption beneath them.
 
         *timing_note* is appended to the caption — the execution time is not
-        derivable from ``metrics``, and an unlabelled run still has a timing
+        derivable from metrics, and an unlabelled run still has a timing
         worth showing even though it has no metrics at all.
         """
         suffix = f"  ·  {timing_note}" if timing_note else ""
@@ -176,9 +176,9 @@ class MainWindowResultsMixin:
         All tabs (Predictions, Visualizations, Transformed Features, Dataset
         Summary, Batch Results, History) move together and stay switchable —
         this is one full-screen view over the tab strip, not a separate one
-        per tab. ``self._results_tabs`` is reparented in place (not copied),
+        per tab. self._results_tabs is reparented in place (not copied),
         so it keeps its live state, and is handed back to the same slot in
-        ``self._results_stack`` when the window closes.
+        self._results_stack when the window closes.
         """
         win = getattr(self, "_results_window", None)
         try:

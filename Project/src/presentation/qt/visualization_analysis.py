@@ -1,7 +1,7 @@
 """Label/value rows for the analysis panel beside the scatter plot.
 
-Pure formatting over a ``TransferLearningResult`` — the same rows feed the
-on-screen panel and the exported PDF (via ``VisualizationTab.analysis_rows``),
+Pure formatting over a TransferLearningResult — the same rows feed the
+on-screen panel and the exported PDF (via VisualizationTab.analysis_rows),
 so the report always states the numbers the user saw.
 
 The three readings are deliberately independent: MMD measures the

@@ -1,7 +1,7 @@
 """Colour tokens for the dark and light themes.
 
-Split out of ``style.py`` so the palettes can be imported without pulling in
-the whole QSS template. ``PALETTE`` is also read directly by widgets for the
+Split out of style.py so the palettes can be imported without pulling in
+the whole QSS template. PALETTE is also read directly by widgets for the
 colours that must go through the Qt/Matplotlib API rather than QSS (table
 cell foregrounds, the status dot, chart series), which keeps one source of
 truth for the theme.
@@ -81,8 +81,8 @@ LIGHT_PALETTE: dict[str, str] = {
     "tooltip_text": "#eaeff5",
 }
 
-#: Default/back-compat export — prefer ``DARK_PALETTE`` / ``LIGHT_PALETTE`` and
-#: ``build_style_sheet`` for anything that needs to react to a theme switch.
+#: Default/back-compat export — prefer DARK_PALETTE / LIGHT_PALETTE and
+#: build_style_sheet for anything that needs to react to a theme switch.
 PALETTE = DARK_PALETTE
 
 __all__ = ["DARK_PALETTE", "LIGHT_PALETTE", "PALETTE"]

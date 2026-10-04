@@ -1,14 +1,14 @@
 """Window chrome: the menu bar, the status bar, and the progress bars.
 
-The run progress bar carries ``cycleColor`` 0-3 and ``paused`` dynamic
-properties, set from ``main_window_progress.py``; each combination needs
+The run progress bar carries cycleColor 0-3 and paused dynamic
+properties, set from main_window_progress.py; each combination needs
 its own rule here because QSS cannot compute a colour from a property.
 """
 
 from __future__ import annotations
 
-#: QSS fragment; concatenated into the one ``string.Template`` built in
-#: ``style.py``. ``$token`` placeholders are substituted from the palette
+#: QSS fragment; concatenated into the one string.Template built in
+#: style.py. $token placeholders are substituted from the palette
 #: there, so this stays a plain string and is never substituted alone.
 CHROME_QSS = """/* ---------- Menu bar ---------- */
 QMenuBar {

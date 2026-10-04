@@ -1,15 +1,15 @@
 """Feedback dialogs — the badge, headline, detail, and buttons of
-``message_box.MessageDialog``, keyed off its ``kind`` property.
+message_box.MessageDialog, keyed off its kind property.
 """
 
 from __future__ import annotations
 
-#: QSS fragment; concatenated into the one ``string.Template`` built in
-#: ``style.py``. ``$token`` placeholders are substituted from the palette
+#: QSS fragment; concatenated into the one string.Template built in
+#: style.py. $token placeholders are substituted from the palette
 #: there, so this stays a plain string and is never substituted alone.
 DIALOGS_QSS = """/* ---------- Feedback dialogs (message_box.MessageDialog) ----------
    The badge replaces QMessageBox's platform icon. Its colour comes from
-   the `kind` property so a theme switch repaints it automatically and
+   the kind property so a theme switch repaints it automatically and
    message_box.py never names a colour itself. Each kind gets a tinted
    disc rather than a saturated block: at 34px a full-strength fill next
    to body text reads as an alarm even when the message is a success. */

@@ -1,15 +1,15 @@
 """Interactive controls: text inputs, combo boxes, spin boxes, buttons.
 
-Two Qt traps live in here; don't undo them. Styling ``QComboBox`` at all
-suppresses the platform drop-down arrow, so an explicit ``::down-arrow``
-image is required (hence the SVGs under ``assets/``), and the same goes
+Two Qt traps live in here; don't undo them. Styling QComboBox at all
+suppresses the platform drop-down arrow, so an explicit ::down-arrow
+image is required (hence the SVGs under assets/), and the same goes
 for spin-box arrows.
 """
 
 from __future__ import annotations
 
-#: QSS fragment; concatenated into the one ``string.Template`` built in
-#: ``style.py``. ``$token`` placeholders are substituted from the palette
+#: QSS fragment; concatenated into the one string.Template built in
+#: style.py. $token placeholders are substituted from the palette
 #: there, so this stays a plain string and is never substituted alone.
 CONTROLS_QSS = """/* ---------- Text inputs ---------- */
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {

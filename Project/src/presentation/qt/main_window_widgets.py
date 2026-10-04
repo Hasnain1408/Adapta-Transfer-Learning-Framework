@@ -1,7 +1,7 @@
 """Creating every widget the window owns.
 
 One job: construct widgets and set their static properties. No layout
-(``main_window_layout.py``), no signal wiring (``main_window_signals.py``),
+(main_window_layout.py), no signal wiring (main_window_signals.py),
 and no behaviour — the handlers live in the mixins named after what they
 do. This is the file to open when asking "where does this control come
 from?".

@@ -91,9 +91,9 @@ class MainWindowMenuMixin:
     def _build_title_bar(self) -> None:
         """Stack a custom title bar above the real menu bar.
 
-        The window is frameless, so ``TitleBar`` stands in for the OS
-        decoration. ``QMainWindow.setMenuWidget`` accepts any widget as the
-        menu-bar area, so the existing ``self.menuBar()`` is nested inside a
+        The window is frameless, so TitleBar stands in for the OS
+        decoration. QMainWindow.setMenuWidget accepts any widget as the
+        menu-bar area, so the existing self.menuBar() is nested inside a
         small container alongside it rather than rebuilt.
         """
         self._title_bar = TitleBar(self, "Adapta: Transfer Learning Studio")

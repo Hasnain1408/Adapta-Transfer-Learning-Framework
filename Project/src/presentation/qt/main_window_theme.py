@@ -1,4 +1,4 @@
-"""Theme switching and the Learning Materials dialog for ``MainWindow``."""
+"""Theme switching and the Learning Materials dialog for MainWindow."""
 
 from __future__ import annotations
 

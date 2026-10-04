@@ -1,14 +1,14 @@
 """Data-presentation surfaces: sidebar, metric cards, badges, tabs, tables, lists.
 
-Never set ``font-weight`` in a ``QTabBar::tab`` rule — Qt measures the tab
+Never set font-weight in a QTabBar::tab rule — Qt measures the tab
 with the base font and paints it with the heavier one, which clips the
 label. Selection is signalled with colour and the bottom border instead.
 """
 
 from __future__ import annotations
 
-#: QSS fragment; concatenated into the one ``string.Template`` built in
-#: ``style.py``. ``$token`` placeholders are substituted from the palette
+#: QSS fragment; concatenated into the one string.Template built in
+#: style.py. $token placeholders are substituted from the palette
 #: there, so this stays a plain string and is never substituted alone.
 DATA_QSS = """/* ---------- Sidebar ---------- */
 QWidget#sidebar {

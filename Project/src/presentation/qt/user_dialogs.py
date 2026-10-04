@@ -2,7 +2,7 @@
 
 A table of accounts with add/edit/delete underneath, and the single-record
 editor behind those actions. Every write is routed through
-``ExperimentCatalogUseCase`` so no widget touches SQL.
+ExperimentCatalogUseCase so no widget touches SQL.
 """
 
 from __future__ import annotations
@@ -36,8 +36,8 @@ from presentation.qt.title_bar import install_title_bar
 class UserEditorDialog(QDialog):
     """Create or edit a single user.
 
-    Returns the edited :class:`User` from :meth:`user`; ``id`` and
-    ``created_at`` are carried through untouched so the caller can pass the
+    Returns the edited User from user; id and
+    created_at are carried through untouched so the caller can pass the
     result straight to an update.
     """
 
@@ -101,7 +101,7 @@ class UserEditorDialog(QDialog):
     def _validate_and_accept(self) -> None:
         """Reject empty or obviously malformed input before hitting the database.
 
-        The schema enforces both rules too (``CHECK (length(btrim(...)) > 0)``
+        The schema enforces both rules too (CHECK (length(btrim(...)) > 0)
         and the unique email index); catching them here turns a driver
         exception into a readable message.
         """
@@ -150,7 +150,7 @@ class UserEditorDialog(QDialog):
 
 
 class UserManagerDialog(QDialog):
-    """Full CRUD over the ``users`` table."""
+    """Full CRUD over the users table."""
 
     def __init__(
         self,

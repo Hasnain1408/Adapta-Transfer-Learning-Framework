@@ -1,7 +1,7 @@
 """Starting runs and handling what comes back.
 
-The only module that touches ``TransferLearningWorker`` /
-``BatchTransferLearningWorker`` — every experiment passes through here, off
+The only module that touches TransferLearningWorker /
+BatchTransferLearningWorker — every experiment passes through here, off
 the UI thread, per the worker-thread invariant documented on those classes.
 Also owns the configuration-state helpers, since they are driven almost
 entirely by run configuration and run completion.
@@ -171,7 +171,7 @@ class MainWindowExecutionMixin:
             self._run_single_experiment()
 
     def _validated_single_pair(self) -> tuple[str, str] | None:
-        """The chosen source/target paths, or ``None`` after explaining why not.
+        """The chosen source/target paths, or None after explaining why not.
 
         Shared by the single-method and multi-method paths — they take the
         same two files and differ only in what they do with them, so a

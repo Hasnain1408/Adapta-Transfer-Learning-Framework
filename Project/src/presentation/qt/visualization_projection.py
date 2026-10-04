@@ -78,7 +78,7 @@ def project_pair(
     """Project a (source, target) pair to 2D, subsampled to *cap* rows each.
 
     Returns the two halves already split back apart, in the same row order
-    ``subsample_indices`` produced — so a caller can line the coordinates up
+    subsample_indices produced — so a caller can line the coordinates up
     against the matching label slices.
     """
     source, target = (as_2d(np.asarray(m, dtype=np.float64)) for m in (source, target))

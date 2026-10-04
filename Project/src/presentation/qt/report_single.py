@@ -37,7 +37,7 @@ def build_report_html(
 
     *config_rows* are the method/classifier/dataset/preprocessing settings
     shown under "Configuration". *chart_html* is pre-rendered markup (e.g.
-    from ``AnalyticsChartsWidget.render_to_base64_html()``); pass "" to omit
+    from AnalyticsChartsWidget.render_to_base64_html()); pass "" to omit
     the Visual Analytics section regardless of *sections*.
 
     *feature_space_html* / *feature_space_rows* carry the Feature Space tab's

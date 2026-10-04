@@ -2,7 +2,7 @@
 
 Both follow the same "select a row, get a tab" pattern and are tracked in
 their own dict so a second click raises the existing tab instead of
-duplicating it. ``_close_results_tab`` is the only path that removes one,
+duplicating it. _close_results_tab is the only path that removes one,
 and it refuses to touch anything not in those dicts — the permanent tabs
 must survive it.
 """
@@ -23,8 +23,8 @@ class MainWindowDetailTabsMixin:
     def _open_experiment_detail_tab(self, entry: ExperimentHistoryEntry) -> None:
         """Open (or raise) a closable tab with every field of *entry*.
 
-        Joins in the source/target ``DatasetRecord`` rows, which
-        ``ExperimentHistoryEntry`` doesn't carry (it only denormalises the
+        Joins in the source/target DatasetRecord rows, which
+        ExperimentHistoryEntry doesn't carry (it only denormalises the
         domain *names*) — this is the one place that needs the full rows.
         """
         experiment_id = entry.experiment.id
@@ -72,10 +72,10 @@ class MainWindowDetailTabsMixin:
     def _open_pair_detail_tab(self) -> None:
         """Open (or raise) a closable tab for the row selected in Batch Results.
 
-        Mirrors ``_open_experiment_detail_tab``'s "select a row, get a tab"
+        Mirrors _open_experiment_detail_tab's "select a row, get a tab"
         pattern. Fires on every selection change, so re-selecting an
         already-open pair's row raises its tab instead of duplicating it.
-        Batch pairs have no persisted id (unlike an ``ExperimentRecord``), so
+        Batch pairs have no persisted id (unlike an ExperimentRecord), so
         the pair object's identity is the key instead.
         """
         if self._last_batch_result is None:
@@ -107,7 +107,7 @@ class MainWindowDetailTabsMixin:
 
         The table is ordered by rank, not by the order the methods ran, so
         the row index is resolved through the same ranking the table used
-        rather than indexing into ``methods`` directly — otherwise clicking
+        rather than indexing into methods directly — otherwise clicking
         the winner would open whichever method happened to run first.
         """
         multi_result = self._last_multi_result
@@ -155,7 +155,7 @@ class MainWindowDetailTabsMixin:
 
     @staticmethod
     def _ranked_method_entries(multi_result):
-        """Method entries in the order ``populate_method_results_table`` rows them."""
+        """Method entries in the order populate_method_results_table rows them."""
         ranked = multi_result.ranked()
         ranked_names = {entry.method_name for entry in ranked}
         return ranked + [
@@ -167,8 +167,8 @@ class MainWindowDetailTabsMixin:
 
         Guards against ever deleting one of the six permanent tabs (their
         close buttons are stripped, but this is a second line of defence):
-        only a widget actually tracked in ``_experiment_detail_tabs`` or
-        ``_pair_detail_tabs`` gets removed and deleted.
+        only a widget actually tracked in _experiment_detail_tabs or
+        _pair_detail_tabs gets removed and deleted.
         """
         widget = self._results_tabs.widget(index)
         experiment_id = next(

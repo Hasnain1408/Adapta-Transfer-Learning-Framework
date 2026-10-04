@@ -16,9 +16,9 @@ from presentation.qt.report_common import page_header
 #: holds before headers like "Baseline Acc" start wrapping mid-word
 #: ("Baselin/e Acc") or losing their one-line layout. Tuned empirically
 #: against the actual print geometry (A4, 15mm margins, 9pt table font,
-#: see ``REPORT_IMAGE_WIDTH``): 7 data columns still wrapped headers like
+#: see REPORT_IMAGE_WIDTH): 7 data columns still wrapped headers like
 #: "Precision" mid-word, 5 does not. The Comparison report's "Exact Values"
-#: table can carry up to 16 columns (see ``comparison_tab.TABLE_COLUMNS``)
+#: table can carry up to 16 columns (see comparison_tab.TABLE_COLUMNS)
 #: — CSV export has no width limit and uses the same rows unsplit, so this
 #: only reshapes the PDF's copy.
 _MAX_TABLE_DATA_COLUMNS = 5
@@ -35,7 +35,7 @@ def _chunk_wide_table(
     A table wider than the printable page doesn't reflow in Qt's rich-text
     renderer the way a browser would — the columns just get squeezed until
     header text wraps letter by letter. Splitting into several narrower
-    tables, each repeating the first ``_TABLE_ANCHOR_COLUMNS`` columns so a
+    tables, each repeating the first _TABLE_ANCHOR_COLUMNS columns so a
     reader can still tell which row is which, keeps every header on one
     line. A table that already fits is returned unchanged as a single chunk.
     """
@@ -68,7 +68,7 @@ def build_comparison_report_html(
 ) -> str:
     """Render the stored-results comparison as a standalone report.
 
-    *chart_sections* is ``[(view name, <img> markup), ...]`` — one entry per
+    *chart_sections* is [(view name, <img> markup), ...] — one entry per
     comparison view the user ticked, already rendered by the tab that owns
     the figure. *table_rows* is the exact-values table with its header row
     first. Nothing is computed here; this only lays out what it is given.

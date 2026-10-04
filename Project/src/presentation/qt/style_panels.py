@@ -4,8 +4,8 @@ scroll areas and bars, tooltips, and the file-picker dialog.
 
 from __future__ import annotations
 
-#: QSS fragment; concatenated into the one ``string.Template`` built in
-#: ``style.py``. ``$token`` placeholders are substituted from the palette
+#: QSS fragment; concatenated into the one string.Template built in
+#: style.py. $token placeholders are substituted from the palette
 #: there, so this stays a plain string and is never substituted alone.
 PANELS_QSS = """/* ---------- Live processing status (above the results area) ----------
    Stage chips are distinguished by colour and their leading glyph only.

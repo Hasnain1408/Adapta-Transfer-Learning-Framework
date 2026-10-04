@@ -1,15 +1,15 @@
 """The option tables backing the configuration dropdowns.
 
-Each entry is ``(display label, value)`` and the combo boxes send
-``currentData()`` — the value, never the visible label — so a dropdown can
+Each entry is (display label, value) and the combo boxes send
+currentData() — the value, never the visible label — so a dropdown can
 be reworded without silently disabling the transform behind it. The values
-are what ``application.preprocessing`` dispatches on, so adding an option
+are what application.preprocessing dispatches on, so adding an option
 here means adding the matching branch there.
 """
 
 from __future__ import annotations
 
-#: ``(display label, value)``. The value is what the use case dispatches on, so
+#: (display label, value). The value is what the use case dispatches on, so
 #: labels can be reworded without silently disabling a transform.
 NORMALIZATION_OPTIONS: list[tuple[str, str]] = [
     ("None", "None"),

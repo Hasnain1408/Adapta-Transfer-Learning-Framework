@@ -1,6 +1,6 @@
 """Report comparing several methods run against one dataset pair.
 
-Distinct from ``report_comparison``, which ranks *stored* experiments
+Distinct from report_comparison, which ranks *stored* experiments
 across a history: this covers one run, where the datasets, preprocessing,
 classifier, and baseline were identical by construction rather than by
 coincidence. That guarantee is worth stating in the report itself, because

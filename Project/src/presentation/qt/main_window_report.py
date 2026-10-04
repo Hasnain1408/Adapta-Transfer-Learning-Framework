@@ -1,11 +1,11 @@
-"""PDF report export for ``MainWindow``.
+"""PDF report export for MainWindow.
 
 Every export path (a live single run, a live batch, a replayed history
 entry, or one pair opened from a batch's detail tab) funnels through
-:meth:`_write_pdf_report`: pick sections in ``ExportOptionsDialog``, build
-the HTML with the matching function in ``report.py``, then print it via
-``QTextDocument``/``QPrinter``. The four ``_export_*`` methods only differ
-in what they hand to ``report.py`` — none of them touch Qt printing directly.
+_write_pdf_report: pick sections in ExportOptionsDialog, build
+the HTML with the matching function in report.py, then print it via
+QTextDocument/QPrinter. The four _export_* methods only differ
+in what they hand to report.py — none of them touch Qt printing directly.
 """
 
 from __future__ import annotations
@@ -253,8 +253,8 @@ class MainWindowReportMixin:
     # ------------------------------------------------------------------
     def _export_pdf_report(self) -> None:
         """Export whichever live result — single run or batch — finished most
-        recently, per ``self._last_run_kind`` (set by the success handlers in
-        ``main_window_run.py``)."""
+        recently, per self._last_run_kind (set by the success handlers in
+        main_window_run.py)."""
         if self._last_run_kind == "batch":
             self._export_batch_report()
         elif self._last_run_kind == "multi":
@@ -347,7 +347,7 @@ class MainWindowReportMixin:
     def _export_method_report(self, entry, pair: PairTransferLearningResult, chart_html: str) -> None:
         """Export one method of a comparison, from its detail tab.
 
-        Renders through ``build_report_html`` like any other single run —
+        Renders through build_report_html like any other single run —
         the result really is one, it just happens to have been produced
         alongside others.
         """
@@ -383,7 +383,7 @@ class MainWindowReportMixin:
         )
 
     def _export_pair_report(self, pair: PairTransferLearningResult, chart_html: str) -> None:
-        """Export one batch pair's own report — used by ``PairDetailView``'s
+        """Export one batch pair's own report — used by PairDetailView's
         Export Report button, which already has its own charts widget to
         render *chart_html* from."""
         if self._reject_if_busy("exporting a report"):

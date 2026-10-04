@@ -5,16 +5,16 @@ way it did? The scatter plot shows where the two domains sit relative to
 each other before and after the method ran, and the side panel puts three
 independent readings next to it —
 
-- **Domain alignment** (``result.alignment``): MMD before vs. after, which
+- **Domain alignment** (result.alignment): MMD before vs. after, which
   measures the distributions directly.
-- **Classification performance** (``result.negative_transfer``): the same
+- **Classification performance** (result.negative_transfer): the same
   classifier with and without adaptation, which measures the actual task.
 - **Negative transfer**: raised from that second comparison alone. A method
   can close the domain gap (good MMD) and still hurt accuracy, so the
   warning deliberately does not consult MMD or the plot.
 
 Everything is projected from the run's real feature matrices — the
-preprocessed ones for "Before", ``transformed_*`` for "After". Nothing here
+preprocessed ones for "Before", transformed_* for "After". Nothing here
 generates or perturbs data.
 """
 
@@ -482,7 +482,7 @@ class VisualizationTab(QWidget):
     def _project(self, stage: str) -> tuple[np.ndarray, np.ndarray] | None:
         """Project one stage's features to 2D, memoised per configuration.
 
-        The maths itself lives in ``visualization_projection.project_pair``;
+        The maths itself lives in visualization_projection.project_pair;
         this only supplies the live control values and owns the cache.
         """
         projection = self._projection_combo.currentText()
@@ -734,7 +734,7 @@ class VisualizationTab(QWidget):
     def render_to_base64_html(self) -> str:
         """The current scatter plot as an inline PNG for the PDF report.
 
-        See ``REPORT_IMAGE_WIDTH`` for why this is a ``width`` attribute
+        See REPORT_IMAGE_WIDTH for why this is a width attribute
         rather than a CSS style.
         """
         if self._result is None:
@@ -751,7 +751,7 @@ class VisualizationTab(QWidget):
     def analysis_rows(self) -> list[tuple[str, str]]:
         """Flat label/value pairs describing what the plot is showing.
 
-        Consumed by ``report.py`` so the exported PDF carries the same
+        Consumed by report.py so the exported PDF carries the same
         numbers as the panel beside the chart.
         """
         if self._result is None:

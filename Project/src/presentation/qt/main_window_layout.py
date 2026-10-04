@@ -1,7 +1,7 @@
 """Arranging the constructed widgets into the two pages of the window.
 
 The landing page and the workspace are two pages of one
-``QStackedWidget`` rather than separate windows, so the title bar, the
+QStackedWidget rather than separate windows, so the title bar, the
 theme, and a running experiment's progress all survive moving between
 them.
 """
@@ -40,7 +40,7 @@ class MainWindowLayoutMixin:
     def _build_layout(self) -> None:
         """Two pages in one window: the landing page, then the workspace.
 
-        A ``QStackedWidget`` rather than a second top-level window — the
+        A QStackedWidget rather than a second top-level window — the
         title bar, the theme, and (importantly) the status bar with a
         running experiment's progress all stay put while the user moves
         between them, and neither page has to be rebuilt on the way back.
@@ -120,7 +120,7 @@ class MainWindowLayoutMixin:
 
         Above the handle sits everything that describes the run — datasets,
         metric cards, counts, the progress strip. Below it are the results.
-        A ``QSplitter`` rather than a fixed stretch factor because how much
+        A QSplitter rather than a fixed stretch factor because how much
         room the results deserve is a judgement only the user can make: it
         depends on which tab they are reading (a 700-row predictions table
         wants the whole column; a four-value alignment panel does not).
@@ -179,7 +179,7 @@ class MainWindowLayoutMixin:
         Its inputs matter right up until a run starts and stop mattering the
         moment one finishes — at which point it is roughly 130px of form
         sitting above the results the user actually came to read. Collapsing
-        it (see ``_set_datasets_collapsed``) hands that height to the results
+        it (see _set_datasets_collapsed) hands that height to the results
         stack, which is the only stretching widget in this column.
         """
         group = QGroupBox("Datasets")
@@ -265,7 +265,7 @@ class MainWindowLayoutMixin:
         """Scrollable body of the Method and Parameters section.
 
         Returns a plain QWidget (no QGroupBox wrapper) — the title and border
-        come from the QGroupBox in ``_build_sidebar``, which stays pinned
+        come from the QGroupBox in _build_sidebar, which stays pinned
         while this content scrolls.
         """
         container = QWidget()

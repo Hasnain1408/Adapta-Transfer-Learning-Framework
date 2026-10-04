@@ -1,7 +1,7 @@
 """Shared helpers for the predictions table and dataset-summary formatting.
 
-Used by ``MainWindow``'s own results tabs, ``PairDetailView`` (the per-pair
-batch detail tab), and ``DatasetSummaryView``, so a single-run result and a
+Used by MainWindow's own results tabs, PairDetailView (the per-pair
+batch detail tab), and DatasetSummaryView, so a single-run result and a
 batch pair's result render identically instead of copies of the same logic
 drifting apart.
 """
@@ -65,7 +65,7 @@ def dataset_class_names(labels) -> list[str]:
 
 
 def dataset_dtype_summary(dtypes: list[str]) -> str:
-    """Compact ``"float64 x24, int64 x2"``-style summary for a table cell."""
+    """Compact "float64 x24, int64 x2"-style summary for a table cell."""
     if not dtypes:
         return ""
     counts: dict[str, int] = {}
@@ -77,7 +77,7 @@ def dataset_dtype_summary(dtypes: list[str]) -> str:
 def populate_predictions_table(
     table: QTableWidget, result: TransferLearningResult, palette: dict[str, str]
 ) -> None:
-    """Fill a ``PREDICTIONS_HEADERS`` table. No-op (empty) if unlabelled."""
+    """Fill a PREDICTIONS_HEADERS table. No-op (empty) if unlabelled."""
     table.clearContents()
     if result.target_predictions is None:
         table.setRowCount(0)
@@ -121,7 +121,7 @@ def _pair_time(pair) -> str:
 def populate_batch_results_table(
     table: QTableWidget, batch_result: BatchTransferLearningResult, palette: dict[str, str]
 ) -> str:
-    """Fill a ``BATCH_RESULTS_HEADERS`` table and return the summary caption."""
+    """Fill a BATCH_RESULTS_HEADERS table and return the summary caption."""
     table.setRowCount(len(batch_result.pairs))
 
     success_brush = QBrush(QColor(palette["success"]))
@@ -227,7 +227,7 @@ def _method_row_values(entry, baseline, average_rank) -> tuple[list[str], str]:
 def populate_method_results_table(
     table: QTableWidget, multi_result, palette: dict[str, str]
 ) -> str:
-    """Fill a ``METHOD_RESULTS_HEADERS`` table and return the summary caption.
+    """Fill a METHOD_RESULTS_HEADERS table and return the summary caption.
 
     Rows come out in rank order rather than the order the methods ran, so
     the table answers "which won" by its shape rather than by making the

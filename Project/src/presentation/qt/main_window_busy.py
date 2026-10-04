@@ -1,7 +1,7 @@
 """The "is a run in flight?" guard every blocking action checks first.
 
 Its own module because almost every other mixin depends on it — the session
-mixins call ``_reject_if_busy`` before any database round-trip, the report
+mixins call _reject_if_busy before any database round-trip, the report
 mixin before rendering a PDF, and the run mixin before starting a second
 run. Keeping it separate makes that shared dependency explicit rather than
 having the others reach into run orchestration for it.
@@ -18,9 +18,9 @@ class MainWindowBusyMixin:
     def _is_worker_busy(self) -> bool:
         """Whether a background run is currently in flight.
 
-        Also clears a stale ``self._worker`` left over from a QThread whose
-        C++ object was already deleted by ``deleteLater`` — the Python
-        wrapper raises ``RuntimeError`` on any further method call once
+        Also clears a stale self._worker left over from a QThread whose
+        C++ object was already deleted by deleteLater — the Python
+        wrapper raises RuntimeError on any further method call once
         that happens, so this is the one safe place to check it.
         """
         try:
@@ -31,8 +31,8 @@ class MainWindowBusyMixin:
 
     def _busy_description(self) -> str:
         """Name whatever background run is in flight, for the message
-        ``_reject_if_busy`` shows. Reads the batch checkbox rather than
-        ``_last_run_kind`` because it must describe the run *in progress*,
+        _reject_if_busy shows. Reads the batch checkbox rather than
+        _last_run_kind because it must describe the run *in progress*,
         and the checkbox is disabled (not reset) for the run's duration —
         it still reflects what was actually started."""
         if self._batch_mode_check.isChecked():

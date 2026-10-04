@@ -8,8 +8,8 @@ from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout
 class MetricCard(QFrame):
     """A single headline metric, shown as a titled value tile.
 
-    ``accent`` selects the colour of the card's top border (see the
-    ``QFrame#metricCard[accent=...]`` rules in ``style.py``) so a row of stat
+    accent selects the colour of the card's top border (see the
+    QFrame#metricCard[accent=...] rules in style.py) so a row of stat
     cards reads as a set of distinct, colour-coded tiles rather than
     identical grey boxes.
     """

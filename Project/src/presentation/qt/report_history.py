@@ -1,6 +1,6 @@
 """Report replayed from a persisted experiment row.
 
-Covers only what the ``experiments``/``evaluations``/``datasets`` tables
+Covers only what the experiments/evaluations/datasets tables
 actually store — no per-sample predictions and no charts, since neither
 survives the run that produced them.
 """
@@ -26,9 +26,9 @@ def build_history_report_html(
 ) -> str:
     """Render a report from a persisted experiment row.
 
-    Only what the ``experiments``/``evaluations``/``datasets`` tables
+    Only what the experiments/evaluations/datasets tables
     actually store: no per-sample predictions and no charts, since neither
-    is kept once the run that produced them ends. ``performed_by`` comes
+    is kept once the run that produced them ends. performed_by comes
     from the row's owner rather than a live signed-in user, since the two
     can differ (anyone can browse the shared history, and an experiment's
     owner may since have signed out or be a different account entirely).

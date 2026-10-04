@@ -1,7 +1,7 @@
 """Full detail for one batch pair: predictions, visualizations, dataset summary.
 
-Opened as a closable tab in ``MainWindow``'s results tab strip when a row is
-selected in the Batch Results table — mirrors ``ExperimentDetailView``'s
+Opened as a closable tab in MainWindow's results tab strip when a row is
+selected in the Batch Results table — mirrors ExperimentDetailView's
 "select a row, get a detail tab" pattern already used for History.
 """
 

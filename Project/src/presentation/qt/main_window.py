@@ -1,16 +1,16 @@
-"""``MainWindow`` composition root.
+"""MainWindow composition root.
 
-The class itself only owns window-level lifecycle (``__init__``,
-``changeEvent``, ``closeEvent``) and shared state (``self._palette``,
-``self._last_result``, …). Everything else is implemented by the mixins
+The class itself only owns window-level lifecycle (__init__,
+changeEvent, closeEvent) and shared state (self._palette,
+self._last_result, …). Everything else is implemented by the mixins
 below, one per concern:
 
-- ``MainWindowUIMixin`` — widget/layout/menu construction, signal wiring.
-- ``MainWindowSessionMixin`` — auth, database dialogs, history persistence.
-- ``MainWindowThemeMixin`` — dark/light theme, Learning Materials dialog.
-- ``MainWindowRunMixin`` — dataset/batch picking, worker lifecycle, run state.
-- ``MainWindowResultsMixin`` — metrics/predictions/features rendering.
-- ``MainWindowReportMixin`` — PDF report export.
+- MainWindowUIMixin — widget/layout/menu construction, signal wiring.
+- MainWindowSessionMixin — auth, database dialogs, history persistence.
+- MainWindowThemeMixin — dark/light theme, Learning Materials dialog.
+- MainWindowRunMixin — dataset/batch picking, worker lifecycle, run state.
+- MainWindowResultsMixin — metrics/predictions/features rendering.
+- MainWindowReportMixin — PDF report export.
 
 Read this file first to see the whole window at a glance, then follow into
 whichever mixin covers the behaviour you're looking for.
@@ -67,15 +67,15 @@ class MainWindow(
         current_user: User | None = None,
         database_error: str | None = None,
     ) -> None:
-        """*catalog* is ``None`` when the database could not be reached.
+        """*catalog* is None when the database could not be reached.
 
         The app deliberately stays usable in that state — experiments still
         run, they just are not recorded — so a Neon outage or a missing
-        ``DATABASE_URL`` degrades the feature rather than blocking start-up.
-        ``database_error`` carries the reason, shown once in the status bar.
+        DATABASE_URL degrades the feature rather than blocking start-up.
+        database_error carries the reason, shown once in the status bar.
 
         *current_user* is the account currently signed in when the window is
-        created. It is usually ``None`` because sign-in is now optional and is
+        created. It is usually None because sign-in is now optional and is
         only prompted from the header button when the user asks for it.
         """
         super().__init__()
@@ -169,7 +169,7 @@ class MainWindow(
     def _navigate_from_landing(self, key: str) -> None:
         """Route one landing-page choice to the thing it names.
 
-        The whole mapping lives here so ``LandingPage`` stays a view that
+        The whole mapping lives here so LandingPage stays a view that
         emits names and knows nothing about the window's internals.
         """
         if key == "experiment":
@@ -250,7 +250,7 @@ class MainWindow(
     def _stop_background_work(self) -> None:
         """Bring any in-flight run to a halt before the window goes away.
 
-        Shared by ``closeEvent`` and :meth:`_exit_application`, which reach
+        Shared by closeEvent and _exit_application, which reach
         shutdown by different routes — the window manager's close button
         versus the app's own Exit System button — but must leave the same
         state behind: no QThread still touching objects Qt is about to
@@ -278,12 +278,12 @@ class MainWindow(
     def _exit_application(self) -> None:
         """Quit the whole app: the sidebar's Exit System button and Ctrl+Q.
 
-        Not simply ``self.close()``. Closing only this window leaves the app
+        Not simply self.close(). Closing only this window leaves the app
         running whenever another top-level window is open — the full-screen
         results viewer and the Learning Materials dialog are both parented to
-        ``None`` — so the process would linger with no way back to it. This
-        ends the event loop outright, which lets ``main()`` run its
-        ``finally`` and close the database connection.
+        None — so the process would linger with no way back to it. This
+        ends the event loop outright, which lets main() run its
+        finally and close the database connection.
         """
         running = self._is_worker_busy()
         if running:

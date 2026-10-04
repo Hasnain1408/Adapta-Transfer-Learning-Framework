@@ -1,8 +1,8 @@
 """Live run feedback: the status bar, the progress bar, and pause/cancel.
 
 Everything that tells the user what a run is *doing right now*, as opposed
-to starting it (``main_window_execution.py``) or showing what it produced
-(``main_window_results.py``). ``_on_progress`` is the UI-thread end of the
+to starting it (main_window_execution.py) or showing what it produced
+(main_window_results.py). _on_progress is the UI-thread end of the
 worker's progress signal and must never block.
 """
 
@@ -20,12 +20,12 @@ class MainWindowProgressMixin:
     def _on_progress(self, update: ProgressUpdate) -> None:
         """Relay one worker-thread progress report to the UI.
 
-        Arrives on the UI thread: ``RunControl`` calls the worker's
-        ``progress.emit`` from the worker thread, and Qt queues the slot
+        Arrives on the UI thread: RunControl calls the worker's
+        progress.emit from the worker thread, and Qt queues the slot
         because the worker object's affinity is this thread. Nothing here
         may block — it runs between paint events.
 
-        A pause is not overwritten: ``_toggle_pause`` has already put
+        A pause is not overwritten: _toggle_pause has already put
         "Paused" on the status bar, and a report that was in flight when
         the user hit pause would otherwise flip it straight back to
         "Running".
@@ -49,7 +49,7 @@ class MainWindowProgressMixin:
             self._progress_bar.setValue(int(round(fraction * 100)))
 
     def _set_status(self, text: str, color_key: str) -> None:
-        """Show a status message. ``color_key`` names a semantic palette entry
+        """Show a status message. color_key names a semantic palette entry
         (e.g. "success", "warning") rather than a literal colour, so a theme
         switch can recolour the currently displayed status."""
         self._status_key = color_key
@@ -172,8 +172,8 @@ class MainWindowProgressMixin:
 
     def _on_cancelled(self) -> None:
         """A single-pair run was cancelled before it produced any result --
-        batch cancellation instead comes back through ``_on_batch_success``
-        with ``cancelled=True``, since a batch has partial results worth
+        batch cancellation instead comes back through _on_batch_success
+        with cancelled=True, since a batch has partial results worth
         keeping. Nothing to record here: there's no run to show."""
         self._set_status("Cancelled", "neutral")
         # Left on screen rather than hidden: the stage still marked active

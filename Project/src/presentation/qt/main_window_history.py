@@ -1,6 +1,6 @@
 """Recording finished runs to the catalogue, and the History tab around them.
 
-``_persist_run`` is the single write path — both the single-run and the
+_persist_run is the single write path — both the single-run and the
 batch completion handlers funnel through it, so every pair of a batch is
 catalogued exactly like a standalone run. The rest of this mixin is about
 showing that history back: the tab's visibility, and replaying a stored
@@ -161,7 +161,7 @@ class MainWindowHistoryMixin:
         """Copy a stored experiment's settings back into the run form.
 
         Only the settings — not the dataset paths, which may since have moved
-        or been deleted. Selections are applied by ``findData``/``findText`` so
+        or been deleted. Selections are applied by findData/findText so
         a value the current build no longer offers is skipped rather than
         silently landing on the wrong entry.
         """

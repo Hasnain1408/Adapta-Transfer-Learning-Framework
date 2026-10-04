@@ -1,8 +1,8 @@
 """Shared building blocks for every exported PDF report.
 
-The four ``build_*_report_html`` entry points (single run, batch, comparison,
+The four build_*_report_html entry points (single run, batch, comparison,
 history) each live in their own module and all draw their visual language
-from here: one ``<head>``, one title block, and the table fragments that more
+from here: one <head>, one title block, and the table fragments that more
 than one of them needs. Nothing in this module knows which report it is
 rendering — callers pass in what they have.
 """
@@ -16,16 +16,16 @@ from domain.models import TransferLearningResult
 from domain.overlap import OVERLAP_DISCLAIMER
 from presentation.qt.duration import format_duration
 
-#: Safe pixel width for a chart ``<img>`` embedded in the printed report.
-#: Measured against the actual print geometry ``_write_pdf_report`` uses in
-#: ``main_window_report.py`` (A4, 15mm margins on every side): that leaves a
+#: Safe pixel width for a chart <img> embedded in the printed report.
+#: Measured against the actual print geometry _write_pdf_report uses in
+#: main_window_report.py (A4, 15mm margins on every side): that leaves a
 #: 509pt-wide printable column, verified with
-#: ``QPrinter().pageRect(QPrinter.Point)``. 480 leaves a small buffer below
+#: QPrinter().pageRect(QPrinter.Point). 480 leaves a small buffer below
 #: that so a Letter-sized default (slightly wider) is covered too.
 #:
-#: This has to be a plain HTML ``width`` attribute, not a CSS percentage —
-#: Qt's ``QTextDocument`` (what actually prints the report) does not scale
-#: ``<img>`` to a percentage or ``max-width`` style; it renders at native
+#: This has to be a plain HTML width attribute, not a CSS percentage —
+#: Qt's QTextDocument (what actually prints the report) does not scale
+#: <img> to a percentage or max-width style; it renders at native
 #: pixel size, which is far wider than a printed page and gets clipped at
 #: the right margin. Height is left for the caller to omit so Qt scales it
 #: proportionally instead of guessing an aspect ratio.
@@ -58,7 +58,7 @@ def format_timestamp(value: datetime | None) -> str:
     """Render a run timestamp in local time, tolerating a tz-aware value.
 
     Persisted rows come back from a TIMESTAMPTZ column as tz-aware, while a
-    live run records a naive local ``datetime.now()``; ``astimezone()`` on a
+    live run records a naive local datetime.now(); astimezone() on a
     naive value assumes local time, so both land in the reader's zone.
     """
     if value is None:

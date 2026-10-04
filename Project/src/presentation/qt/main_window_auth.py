@@ -2,7 +2,7 @@
 
 Everything here is about *who* is using the app. What that account is then
 allowed to see (History) or record (persistence) lives in
-``main_window_history.py``.
+main_window_history.py.
 """
 
 from __future__ import annotations

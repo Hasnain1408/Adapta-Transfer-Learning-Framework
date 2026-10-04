@@ -1,15 +1,15 @@
 """The app's feedback dialogs: success, error, warning, info, confirm.
 
-Replaces ``QMessageBox``'s static helpers. Three things the stock dialog
+Replaces QMessageBox's static helpers. Three things the stock dialog
 could not give us:
 
-- **Its own visual language.** ``QMessageBox`` draws the *platform's*
+- **Its own visual language.** QMessageBox draws the *platform's*
   icons (a Windows-95-lineage yellow triangle, a glossy red cross), which
   land in this app's flat teal dashboard looking pasted in from another
-  decade. Here the icon is a flat badge coloured from ``style.PALETTE``,
+  decade. Here the icon is a flat badge coloured from style.PALETTE,
   so it follows a theme switch like every other widget.
-- **A success state.** ``QMessageBox`` has no "it worked" icon — the
-  convention is to reuse ``Information``, so "report exported" and "log in
+- **A success state.** QMessageBox has no "it worked" icon — the
+  convention is to reuse Information, so "report exported" and "log in
   is unavailable" arrived looking identical. Success is its own kind here.
 - **Somewhere to put raw exception text.** Driver errors ("connection to
   server at ... port 5432 failed") are the wrong first thing to read, but
@@ -295,7 +295,7 @@ def confirm(
 ) -> bool:
     """Ask before doing something the user cannot undo.
 
-    Returns ``True`` only if they chose the confirm button. *confirm_label*
+    Returns True only if they chose the confirm button. *confirm_label*
     should name the action ("Delete", "Clear Everything") rather than say
     "OK" — a labelled verb is what makes the consequence readable at a
     glance from the button itself.

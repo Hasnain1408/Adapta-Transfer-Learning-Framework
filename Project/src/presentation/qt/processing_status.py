@@ -1,7 +1,7 @@
 """Live "what is it doing right now" strip for a running experiment.
 
 Sits above the results area and is hidden whenever nothing is running. It
-renders the stage list from ``domain.progress`` as a left-to-right
+renders the stage list from domain.progress as a left-to-right
 pipeline — done / running / pending — so a run that takes half a minute is
 legible rather than being one indeterminate bar and a wait.
 
@@ -10,8 +10,8 @@ window's default height (its parameter group alone wants 590px of 950),
 so a seven-row column there overlaps the method controls. Width is the
 dimension this layout has spare.
 
-Everything here is driven by ``ProgressUpdate`` values arriving on the UI
-thread via ``TransferLearningWorker.progress``. The strip keeps no timer
+Everything here is driven by ProgressUpdate values arriving on the UI
+thread via TransferLearningWorker.progress. The strip keeps no timer
 of its own for the *work*; only the elapsed clock ticks locally, because
 a stage that blocks for eight seconds sends nothing during those eight
 seconds and a frozen counter reads as a frozen app.
@@ -85,7 +85,7 @@ class _StageChip(QLabel):
 
 
 class ProcessingStatusStrip(QFrame):
-    """The strip itself. Call ``start`` / ``apply`` / ``finish`` / ``clear``."""
+    """The strip itself. Call start / apply / finish / clear."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
