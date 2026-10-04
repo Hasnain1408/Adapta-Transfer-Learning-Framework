@@ -8,6 +8,19 @@ from domain.run_control import RunControl
 
 
 class TCAMethod(TransferLearningMethod):
+    r"""Transfer Component Analysis (TCA, Pan et al., IEEE TNN 2011).
+
+    Learns a shared low-dimensional latent feature representation across domains
+    by minimizing Maximum Mean Discrepancy (MMD) in a Reproducing Kernel Hilbert
+    Space (RKHS) while maximizing the data variance.
+
+    The method solves a constrained generalized eigenvalue problem:
+        (K M K + \\lambda I) W = K H K W \\Phi
+    where K is the kernel matrix across source and target instances, M is the
+    marginal distribution MMD matrix, H is the centering matrix, and W defines
+    the learned projection vectors.
+    """
+
     def __init__(
         self,
         latent_dim: int = 5,

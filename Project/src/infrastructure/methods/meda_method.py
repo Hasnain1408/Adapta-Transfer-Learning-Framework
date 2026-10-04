@@ -12,44 +12,22 @@ from infrastructure.methods.gfk_method import GFKMethod
 
 
 class MEDAMethod(TransferLearningMethod):
-    """Manifold Embedded Distribution Alignment (Wang et al., ACM MM 2018).
+    r"""Manifold Embedded Distribution Alignment (MEDA, Wang et al., ACM MM 2018).
 
-    Ported from the raw reference implementation that shipped alongside
-    this file (Jindong Wang's ``MEDA.py``). Two deliberate departures from
-    that reference, both required to run inside this app rather than as a
-    standalone script:
+    Addresses domain shift by embedding features onto the Grassmann manifold via
+    Geodesic Flow Kernel (GFK), dynamically estimating the balance between
+    marginal and conditional distributions using data-driven A-distance, and
+    directly learning the adapted classifier in a unified regularized kernel
+    ridge regression framework.
 
-    - The reference does ``import GFK`` for its geodesic-flow-kernel step,
-      pulling in a sibling module built on ``bob.learn``/``bob.math`` (see
-      ``TL methods/GFK/GFK.py``), which isn't installable here. This port
-      reuses :class:`GFKMethod`'s dependency-free numpy port instead.
-    - The reference assumes 1-indexed sequential labels (``range(1, C+1)``,
-      ``Ys == c``), which silently drops class 0 for datasets that use
-      0-indexed labels (MNIST/USPS/COIL20 digit labels, for one). This port
-      builds class lists from ``np.unique(labels)`` instead, matching every
-      other multi-class method already in this codebase.
-
-    MEDA is fundamentally a *classifier* (manifold- and
-    distribution-regularized kernel ridge regression over a fixed GFK
-    embedding), not a feature projection: its output is a per-class soft
-    score, not new coordinates in feature space. Since this app always
-    re-fits its own classifier on whatever a method returns, the most
-    faithful thing to hand back is that per-class score matrix `F` itself
-    -- returning the (unrefined, iteration-independent) GFK embedding
-    instead would make MEDA behaviourally identical to plain GFK and throw
-    away everything the iterative mu-estimation/alignment loop does.
-
-    The reference's manifold regularization term (`rho * L`) is left as the
-    zero matrix, exactly as shipped -- its own comment reads "Graph
-    Laplacian is on the way...", i.e. never finished upstream either.
-    ``rho`` is kept for signature parity but has no effect until that term
-    is implemented.
-
-    "Primal" (no kernel) is intentionally not offered: the reference's
-    generic kernel() has a primal branch, but MEDA's ridge-regression
-    system needs a square (ns+nt) x (ns+nt) kernel matrix, which "no
-    kernel" can't produce in general (unlike TCA/JDA/BDA, which solve for a
-    projection matrix instead and don't have this constraint).
+    The algorithm iteratively alternates between:
+    1. Mapping source and target features onto the Grassmann manifold via GFK.
+    2. Dynamically computing the balance factor mu from marginal and conditional
+       A-distances: mu = d_M / (d_M + \\sum d_c).
+    3. Constructing the dynamic MMD matrix M = (1 - mu) M_0 + mu \\sum M_c.
+    4. Solving the regularized Structural Risk Minimization system in closed form:
+           A = [ (E + \\lambda M + \\rho L) K + \\eta I ]^{-1} Y_tilde
+    5. Updating target pseudo-labels from soft decision scores until convergence.
     """
 
     def __init__(

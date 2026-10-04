@@ -8,14 +8,20 @@ from domain.run_control import RunControl
 
 
 class JGSAMethod(TransferLearningMethod):
-    """Joint Geometrical and Statistical Alignment (Zhang et al., CVPR 2017).
+    """Joint Geometrical and Statistical Alignment (JGSA, Zhang et al., CVPR 2017).
 
-    Ported from ``TL methods/2017-JGSA/JGSA.m``. Like JDA/BDA it alternates
-    building marginal+conditional MMD alignment matrices from
-    (pseudo-)labels and solving a generalized eigenproblem, but additionally
-    learns *separate* source and target projections regularized by the
-    source's within/between-class scatter and the target's variance, rather
-    than one shared projection.
+    Unifies statistical distribution matching with geometrical manifold alignment
+    by learning coupled yet separate source and target projection transformations:
+    A for the source domain and B for the target domain.
+
+    The algorithm jointly:
+    1. Minimizes marginal and conditional distribution divergence (MMD) across domains.
+    2. Minimizes the geometric divergence between the projected source and target subspaces.
+    3. Maximizes target domain variance to prevent feature degeneration.
+    4. Optimizes source discriminative scatter (minimizing within-class scatter Sw
+       while maximizing between-class scatter Sb).
+    5. Alternates between solving a coupled generalized eigenvalue problem and
+       updating target pseudo-labels via 1-NN classification.
     """
 
     def __init__(

@@ -9,6 +9,23 @@ from domain.run_control import RunControl
 
 
 class JDAMethod(TransferLearningMethod):
+    r"""Joint Distribution Adaptation (JDA, Long et al., ICCV 2013).
+
+    Jointly adapts both the marginal distribution P(X) and conditional
+    distribution P(Y|X) across source and target domains in a shared
+    reproducing kernel Hilbert space.
+
+    The algorithm alternates between:
+    1. Constructing joint discrepancy matrix M = M_0 + \\sum_{c=1}^C M_c using
+       marginal features and current target pseudo-labels.
+    2. Solving the generalized eigenvalue problem:
+           (K M K + \\lambda I) A = K H K A \\Phi
+       to extract the leading domain-invariant projection vectors A.
+    3. Projecting source and target samples into the adapted subspace.
+    4. Updating target pseudo-labels via a base classifier (e.g. 1-NN) until
+       convergence or maximum iterations.
+    """
+
     def __init__(
         self,
         latent_dim: int = 5,

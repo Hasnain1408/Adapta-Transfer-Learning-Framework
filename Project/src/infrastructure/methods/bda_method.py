@@ -9,6 +9,22 @@ from domain.run_control import RunControl
 
 
 class BDAMethod(TransferLearningMethod):
+    r"""Balanced Distribution Adaptation (BDA / W-BDA, Wang et al., IEEE ICDM 2017).
+
+    Adaptively balances the importance of marginal distribution divergence P(X)
+    and class-conditional distribution divergence P(Y|X) using a balance factor
+    mu in [0, 1].
+
+    Also incorporates Weighted BDA (W-BDA) to handle cross-domain class imbalance
+    by weighting conditional MMD matrices by class frequencies.
+
+    The algorithm alternates between:
+    1. Estimating target pseudo-labels via a base classifier.
+    2. Constructing the balanced MMD matrix M = (1 - mu) M_0 + mu \sum w_c M_c.
+    3. Solving the generalized eigenvalue problem (K M K + \lambda I) A = K H K A \Phi.
+    4. Projecting features into the adapted subspace and updating pseudo-labels.
+    """
+
     def __init__(
         self,
         mode: str = "W-BDA",
@@ -75,7 +91,7 @@ class BDAMethod(TransferLearningMethod):
         # StandardScaler is commonly applied as a best practice before transfer learning
         combined = StandardScaler().fit_transform(combined)
 
-        # L2 column normalization (MATLAB: X = X*diag(sparse(1./sqrt(sum(X.^2)))))
+        # L2 column normalization
         X = combined.T
         norms = np.linalg.norm(X, axis=0, keepdims=True)
         norms[norms == 0] = 1.0
@@ -167,7 +183,7 @@ class BDAMethod(TransferLearningMethod):
                 A = eigenvectors[:, sorted_idx[:dim]].real
                 Z = A.T @ K
 
-            # MATLAB: Z = Z*diag(sparse(1./sqrt(sum(Z.^2))));
+            # L2 column normalization of transformed coordinates
             z_norms = np.linalg.norm(Z, axis=0, keepdims=True)
             z_norms[z_norms == 0] = 1.0
             Z = Z / z_norms

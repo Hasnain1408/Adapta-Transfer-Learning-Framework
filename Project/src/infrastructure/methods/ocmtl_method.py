@@ -8,6 +8,21 @@ from domain.run_control import RunControl
 
 
 class OCMTLMethod(TransferLearningMethod):
+    """Orthogonal Core-Extraction for Transfer Learning (OCMTL, Nahid et al., Elsevier AEJ 2025).
+
+    Extracts shared orthogonal basis cores between source and target domains via
+    alternating Singular Value Decomposition (SVD) projections without requiring
+    noisy target pseudo-labels.
+
+    Key components include:
+    1. Diagonal class-weighting matrix H_sc to counter severe class imbalance.
+    2. Alternating SVD projections between source and target feature representations.
+    3. Convergence monitoring via principal subspace angles between source and
+       target orthogonal cores.
+    4. Inherent mitigation of multicollinearity by capturing maximum variance
+       along perpendicular axes.
+    """
+
     def __init__(self, latent_dim: int = 2, max_iterations: int = 20) -> None:
         self._latent_dim = latent_dim
         self._max_iterations = max_iterations
@@ -51,7 +66,7 @@ class OCMTLMethod(TransferLearningMethod):
 
         dim = min(self._latent_dim, n_features)
         
-        # Initialize randomly like the original MATLAB: Ct = rand(source_size(2), i);
+        # Initialize random projection matrix Ct
         np.random.seed(42)  # For consistent testing
         Ct = np.random.rand(n_features, dim)
         

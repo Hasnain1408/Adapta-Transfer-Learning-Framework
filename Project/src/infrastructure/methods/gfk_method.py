@@ -8,11 +8,15 @@ from domain.run_control import RunControl
 
 
 class GFKMethod(TransferLearningMethod):
-    """Geodesic Flow Kernel (Gong et al., CVPR 2012).
+    """Geodesic Flow Kernel (GFK, Gong et al., CVPR 2012).
 
-    Ported from ``TL methods/GFK/GFK.m``. Unsupervised: builds a single PSD
-    kernel matrix G from the source/target PCA subspaces and projects both
-    domains through G^0.5, so it needs no source labels and no iteration.
+    Models domain adaptation on the Grassmann manifold by parameterizing the
+    continuous geodesic flow between source and target PCA subspaces, integrating
+    over an infinite number of intermediate subspaces in closed form.
+
+    Constructs a positive semi-definite (PSD) kernel matrix G from principal
+    angles and projects both domains into the domain-invariant space via G^{0.5},
+    requiring neither target labels nor iterative optimization.
     """
 
     def __init__(self, latent_dim: int = 10) -> None:
@@ -24,11 +28,8 @@ class GFKMethod(TransferLearningMethod):
 
     @staticmethod
     def _full_pca_basis(X: np.ndarray) -> np.ndarray:
-        # MATLAB's pca(X) returns every principal-component direction (an
-        # m x m orthonormal basis), not a truncated one; np.linalg.eigh on
-        # the m x m covariance gives the same full basis regardless of the
-        # sample count, matching that behaviour without an explicit
-        # null-space call for the [Ps, null(Ps')] extension GFK.m does.
+        # Computes the full m x m orthonormal principal component basis
+        # via eigendecomposition of the centered sample covariance.
         centered = X - X.mean(axis=0, keepdims=True)
         cov = centered.T @ centered
         eigenvalues, eigenvectors = np.linalg.eigh(cov)
@@ -46,10 +47,8 @@ class GFKMethod(TransferLearningMethod):
         a_block = q_pt[:dim, :]
         b_block = q_pt[dim:, :]
 
-        # [a_block; b_block] has orthonormal columns, so a_block'a_block +
-        # b_block'b_block = I: this is exactly the setup for a CS
-        # decomposition, computable via a single SVD of a_block rather than
-        # a full GSVD routine (which scipy/numpy don't expose).
+        # Columns of [a_block; b_block] are orthonormal (a_block' a_block + b_block' b_block = I),
+        # matching the setup for Cosine-Sine (CS) decomposition via SVD of a_block.
         u1, cos_vals, vt = np.linalg.svd(a_block)
         cos_vals = np.clip(cos_vals, -1.0, 1.0)
         theta = np.arccos(cos_vals)

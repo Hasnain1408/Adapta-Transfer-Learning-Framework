@@ -7,6 +7,16 @@ from domain.run_control import RunControl
 
 
 class CORALMethod(TransferLearningMethod):
+    """Correlation Alignment (CORAL, Sun et al., AAAI 2016).
+
+    Minimizes domain shift by aligning the second-order statistics (covariance)
+    of source and target distributions in the original feature space.
+
+    The closed-form transformation matrix A = C_S^{-1/2} C_T^{1/2} whitens the
+    source data and re-colors it with the covariance structure of the target
+    domain without reducing dimensionality or requiring target labels.
+    """
+
     def __init__(self) -> None:
         pass
 

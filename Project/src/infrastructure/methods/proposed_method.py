@@ -1,21 +1,4 @@
-"""Proposed method – Python port of SimpleExps (Proposed_method.m).
 
-Two-phase domain adaptation:
-
-1. **Covariance-aligned subspace** – whiten the source covariance and colour
-   with the target covariance, build an MMD + conditional-alignment matrix
-   *M*, and iteratively factorise source/target into a shared low-rank
-   subspace *Ct_tar_src*.  Pseudo-labels are refreshed each iteration with
-   a 1-NN classifier.
-
-2. **OCMTL subspace** – same iterative factorisation on the original
-   (non-covariance-aligned) normalised features, sweeping rank from 2
-   upward and stopping when the singular-value ratio exceeds a threshold.
-   Produces *Ct_ocmtl*.
-
-The transformed source/target are the horizontal concatenation of both
-projections (or just phase-1 if OCMTL yields nothing).
-"""
 
 from __future__ import annotations
 
@@ -28,7 +11,12 @@ from domain.run_control import RunControl
 
 
 class ProposedMethod(TransferLearningMethod):
-    """Port of ``SimpleExps`` from ``Proposed_method.m``."""
+    """Hybrid Two-Phase Transfer Learning Method.
+
+    Integrates second-order covariance alignment with MMD distribution adaptation
+    and orthogonal core extraction (OCMTL) to construct a comprehensive
+    domain-invariant transfer subspace.
+    """
 
     def __init__(
         self,
@@ -40,7 +28,7 @@ class ProposedMethod(TransferLearningMethod):
         percentile_cutoff: float = 90.0,
         combined_sig_threshold: float = 3.0,
     ) -> None:
-        self._regularization = regularization         # gamma in MATLAB
+        self._regularization = regularization         # Regularization parameter
         self._max_iterations = max_iterations         # inner iteration cap
         self._convergence_tol = convergence_tol       # Frobenius convergence
         self._sv_ratio_threshold = sv_ratio_threshold # OCMTL rank stop
@@ -80,7 +68,7 @@ class ProposedMethod(TransferLearningMethod):
         source_labels: np.ndarray,
         target: np.ndarray,
     ) -> np.ndarray:
-        """1-NN pseudo-label assignment (mirrors ``get_prediction`` in MATLAB)."""
+        """1-NN pseudo-label assignment on adapted target representations."""
         knn = KNeighborsClassifier(n_neighbors=1)
         knn.fit(source, source_labels)
         return knn.predict(target)

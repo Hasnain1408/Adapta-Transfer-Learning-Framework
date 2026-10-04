@@ -8,20 +8,42 @@ from domain.run_control import RunControl
 
 
 class DALIMethod(TransferLearningMethod):
-    """Domain Adaptation through Locality Information (2023).
+    r"""Visual Domain Adaptation through Locality Information (DALI, 2023).
 
-    Ported from ``TL methods/2023-DALI/DALI.m`` and ``calculateLPP.m``. Like
-    JDA/BDA it alternates: build marginal+conditional MMD alignment matrices
-    from (pseudo-)labels, solve a generalized eigenproblem, re-predict pseudo
-    target labels, repeat. It additionally regularizes with the target's
-    within/between-class scatter and a locality-preserving term on the
-    source's feature graph.
+    Simultaneously minimizes distribution discrepancy across domains, preserves
+    intrinsic local geometric structure, and enhances target class discriminability
+    within a unified optimization framework.
 
-    Note: the source ``DALI.m`` sets its ``delta`` coefficient from
-    ``options.mu`` (copy-pasted from JGSA.m), leaving ``options.delta``
-    completely unused elsewhere in the function. That looks like a leftover
-    bug rather than intent -- ``options.mu`` has no other role in DALI -- so
-    this port instead wires ``delta`` to its own named coefficient below.
+    The method alternates between:
+    1. Estimating target pseudo-labels using a base classifier in the current
+       adapted subspace.
+    2. Constructing joint Maximum Mean Discrepancy (MMD) matrices combining
+       marginal ($M_0$) and conditional ($N$) distribution divergence: $M = M_0 + N$.
+    3. Preserving local neighborhood manifolds on the source domain using
+       Locality Preserving Projections (LPP) with graph Laplacian regularization ($L + D$).
+    4. Enhancing target domain class discriminability by maximizing between-class
+       scatter ($S_b$) and minimizing within-class scatter ($S_w$), while preserving
+       target total data variance ($S_t$).
+    5. Solving a coupled generalized eigenvalue problem for source ($A$) and
+       target ($B$) projection bases:
+           left @ W = lambda * right @ W
+       where the cross-domain divergence penalty $\|A - B\|_F^2$ enforces alignment.
+    6. Iterating subspace extraction and pseudo-label refinement until convergence.
+
+    Parameters
+    ----------
+    latent_dim : int, default=10
+        Dimensionality of the learned domain-invariant subspace.
+    regularization : float, default=1.0
+        Tikhonov regularization and domain divergence penalty enforcing A \approx B.
+    beta : float, default=0.4
+        Regularization coefficient for source locality-preserving graph structure (LPP).
+    delta : float, default=0.2
+        Trade-off coefficient for target discriminative scatter (between-class vs within-class).
+    epsilon : float, default=0.1
+        Regularization coefficient for target total scatter variance preservation.
+    iterations : int, default=10
+        Number of alternating optimization and pseudo-label refinement iterations.
     """
 
     def __init__(
@@ -80,11 +102,8 @@ class DALIMethod(TransferLearningMethod):
 
     @staticmethod
     def _calculate_lpp(samples_by_features: np.ndarray, k: int = 1) -> tuple[np.ndarray, np.ndarray]:
-        # Mirrors calculateLPP.m literally. The MATLAB call site passes
-        # Xs' (samples x features) into a helper documented as taking a
-        # features x samples matrix; the effect is a k-NN graph built over
-        # the *columns* of whatever is passed in, i.e. over features here,
-        # not over samples. Ported as called, not as documented.
+        # Construct a k-NN adjacency graph W and unnormalized Graph Laplacian L = D - W
+        # over the feature space to preserve intrinsic geometric locality.
         X = samples_by_features
         n = X.shape[1]
         W = np.zeros((n, n))

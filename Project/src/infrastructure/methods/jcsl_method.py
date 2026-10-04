@@ -7,22 +7,17 @@ from domain.run_control import RunControl
 
 
 class JCSLMethod(TransferLearningMethod):
-    """Joint Cross-domain Classification and Subspace Learning (Fernando et al., 2015).
+    """Joint Cross-domain Classification and Subspace Learning (JCSL, Fernando et al., 2015).
 
-    Ported from ``TL methods/JCSL.m``. Learns a source-side projection U via
-    mini-batch SGD on a hinge loss, regularized to stay close to the
-    target's fixed PCA subspace V. The reference implementation is
-    binary-hinge only (``Ys`` in {-1,+1}); this port generalizes to
-    multi-class datasets with a one-vs-rest hinge term per class (shared U),
-    which reduces to the original formulation exactly when there are only
-    two classes.
+    Simultaneously learns a discriminative classification model on the source domain
+    and aligns the source projection subspace U with the target domain's PCA subspace V.
 
-    Note: MATLAB's inner loop reassigns ``gradient_U`` on every violated
-    sample instead of accumulating it (``for jj = 1:ne gradient_U = ...``),
-    so only the last sample survives before the ``/ne`` averaging that
-    follows -- that average would be meaningless applied to a single
-    sample's raw gradient, so this port accumulates over violated samples
-    before averaging, as the surrounding code clearly intends.
+    The unified objective combines:
+    1. A multi-class hinge loss on source data to maintain class separability.
+    2. Model complexity regularization on classifier weights.
+    3. A Frobenius norm subspace alignment penalty ||U - V||_F to bridge the domain shift.
+
+    Optimized via mini-batch stochastic gradient descent (SGD).
     """
 
     def __init__(
@@ -35,8 +30,8 @@ class JCSLMethod(TransferLearningMethod):
         learning_rate: float = 0.1,
     ) -> None:
         self._latent_dim = latent_dim
-        self._regularization = regularization  # hinge weight (MATLAB Params.L)
-        self._subspace_weight = subspace_weight  # MATLAB Params.B
+        self._regularization = regularization  # Hinge loss penalty weight
+        self._subspace_weight = subspace_weight  # Subspace alignment penalty weight
         self._iterations = iterations
         self._batch_size = batch_size
         self._learning_rate = learning_rate
