@@ -23,7 +23,7 @@ from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from domain.entities import ExperimentHistoryEntry, ExperimentStatus, User
 from presentation.qt import message_box
 
-#: ``(header, width hint)``. ``None`` means the column stretches.
+#: (header, width hint). None means the column stretches.
 _COLUMNS: list[tuple[str, int | None]] = [
     ("ID", 56),
     ("Date", 150),
@@ -51,8 +51,8 @@ def _format_score(value: float | None) -> str:
 class HistoryTab(QWidget):
     """Table of recorded experiments with reload / delete actions.
 
-    Emits :attr:`configuration_requested` when the user asks to reload a past
-    run's settings; ``MainWindow`` owns the form widgets, so applying the
+    Emits :attr:configuration_requested when the user asks to reload a past
+    run's settings; MainWindow owns the form widgets, so applying the
     configuration is its job, not this widget's.
     """
 

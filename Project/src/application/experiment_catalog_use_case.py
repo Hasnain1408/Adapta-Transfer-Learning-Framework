@@ -1,21 +1,4 @@
-"""Recording and querying experiments.
-
-Sits alongside ``RunTransferLearningUseCase``: that one *executes* an
-experiment, this one *remembers* it. Keeping them separate means a failure to
-reach the database can never prevent a run from completing — the UI records
-opportunistically after the fact.
-
-Everything the presentation layer needs from persistence goes through this
-class, so no widget imports a repository or touches SQL.
-
-``ExperimentCatalogUseCase`` holds the four repositories and composes one
-mixin per entity, so each stays separately readable:
-
-- ``CatalogUsersMixin`` — accounts.
-- ``CatalogDatasetsMixin`` — the dataset registry.
-- ``CatalogExperimentsMixin`` — recording runs and their scores.
-- ``CatalogQueriesMixin`` — read-only queries for comparison and statistics.
-"""
+"""Unified experiment catalogue use case combining users, datasets, and history queries."""
 
 from __future__ import annotations
 
@@ -37,7 +20,7 @@ class ExperimentCatalogUseCase(
     CatalogExperimentsMixin,
     CatalogQueriesMixin,
 ):
-    """Persist experiment runs and expose the catalogue to the UI."""
+    """Facade use case coordinating persistence, registration, and reporting queries."""
 
     def __init__(
         self,
@@ -46,6 +29,7 @@ class ExperimentCatalogUseCase(
         experiments: ExperimentRepository,
         evaluations: EvaluationRepository,
     ) -> None:
+        """Initialize the catalog use case with injected repository dependencies."""
         self._users = users
         self._datasets = datasets
         self._experiments = experiments

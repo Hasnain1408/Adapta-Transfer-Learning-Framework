@@ -1,6 +1,6 @@
 """Drawing the six comparison views.
 
-One ``_draw_*`` per entry in ``VIEWS``; ``_render`` in the tab picks which
+One _draw_* per entry in VIEWS; _render in the tab picks which
 to call. Each takes the axes and the already-filtered rows, so none of
 them re-reads the controls or the database.
 """
@@ -22,7 +22,7 @@ from presentation.qt.duration import format_duration
 
 
 class ComparisonChartsMixin:
-    """The per-view chart renderers used by ``ComparisonTab._render``."""
+    """The per-view chart renderers used by ComparisonTab._render."""
 
     def _bar_colors(self, count: int) -> list:
         keys = ["metric_teal", "metric_purple", "metric_amber", "metric_pink", "accent"]

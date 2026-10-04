@@ -29,7 +29,7 @@ from presentation.qt.title_bar import install_title_bar
 
 
 class DatasetRegistryDialog(QDialog):
-    """Browse the ``datasets`` catalogue.
+    """Browse the datasets catalogue.
 
     Read-only apart from deletion: every column is derived from a file the
     loader read, so editing the numbers by hand would only let them drift out

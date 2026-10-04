@@ -1,10 +1,10 @@
 """Card-based Dataset Summary view, shown for both single runs and batch pairs.
 
 Replaces the earlier flat 8-column table with a pair of "Source Dataset" /
-"Target Dataset" cards: a row of headline stat tiles (reusing ``MetricCard``,
+"Target Dataset" cards: a row of headline stat tiles (reusing MetricCard,
 the same tile already used for accuracy/precision/recall/F1) followed by a
 detail form, mirroring the "Overview" / "Dataset" group boxes already used in
-``ExperimentDetailView`` so the whole app shares one visual language for
+ExperimentDetailView so the whole app shares one visual language for
 "read-only record of facts" pages.
 """
 
@@ -72,7 +72,7 @@ class DatasetSummaryView(QWidget):
     def clear(self) -> None:
         """Drop both dataset cards and put the placeholder back.
 
-        ``_clear`` deletes every widget in the row, the original placeholder
+        _clear deletes every widget in the row, the original placeholder
         included, so this builds a fresh one rather than re-showing it.
         """
         self._clear()

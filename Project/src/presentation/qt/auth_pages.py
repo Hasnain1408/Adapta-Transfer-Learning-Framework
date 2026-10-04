@@ -1,6 +1,6 @@
-"""The login and registration pages of ``AuthDialog``.
+"""The login and registration pages of AuthDialog.
 
-Two pages of one ``QStackedWidget`` rather than two dialogs, so switching
+Two pages of one QStackedWidget rather than two dialogs, so switching
 between them keeps the window in place. Split from the dialog itself so
 the form layouts stay readable next to the submit logic that reads them.
 """

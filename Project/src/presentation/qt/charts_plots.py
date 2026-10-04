@@ -1,6 +1,6 @@
 """The three analytics charts, drawn onto a caller-supplied axes.
 
-Pure matplotlib over a ``TransferLearningResult`` and a palette — no widget
+Pure matplotlib over a TransferLearningResult and a palette — no widget
 state — so each chart can be read on its own and reused wherever a figure is
 available (the tab draws them live; the PDF export re-renders the same
 figure).

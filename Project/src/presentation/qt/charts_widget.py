@@ -35,7 +35,7 @@ class AnalyticsChartsWidget(QWidget):
 
     Chart colours mirror the app's active theme (dark or light) so the
     embedded Matplotlib figure reads as part of the dashboard instead of a
-    pasted-in box. Call :meth:`set_palette` after a theme switch.
+    pasted-in box. Call set_palette after a theme switch.
     """
 
     def __init__(self, palette: dict[str, str] | None = None, parent: QWidget | None = None) -> None:
@@ -196,7 +196,7 @@ class AnalyticsChartsWidget(QWidget):
     def render_to_base64_html(self) -> str:
         """Render the current figure to a base64 encoded PNG for HTML/PDF reports.
 
-        See ``REPORT_IMAGE_WIDTH`` for why this is a ``width`` attribute
+        See REPORT_IMAGE_WIDTH for why this is a width attribute
         rather than a CSS style.
         """
         if self._last_result is None:

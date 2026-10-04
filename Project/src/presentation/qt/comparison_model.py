@@ -1,6 +1,6 @@
 """The data model behind the comparison view: one row per method, ranked.
 
-Pure data and arithmetic over ``ExperimentHistoryEntry`` — no Qt — so the
+Pure data and arithmetic over ExperimentHistoryEntry — no Qt — so the
 ranking rules can be read (and checked) apart from the widget that plots
 them. Ranking is *competition* ranking: ties share a place and the next
 place is skipped, which is what a reader expects from a leaderboard.
@@ -14,7 +14,7 @@ from typing import Optional
 from domain.entities import ExperimentHistoryEntry
 from domain.ranking import average_metric_ranks, competition_ranks
 
-#: ``(label, EvaluationRecord attribute)`` for every rankable score.
+#: (label, EvaluationRecord attribute) for every rankable score.
 METRICS: list[tuple[str, str]] = [
     ("Accuracy", "accuracy"),
     ("Precision", "precision"),
@@ -82,7 +82,7 @@ class MethodRow:
     """One method's stored numbers for the selected pair.
 
     Every score is optional: this is a view onto whatever the database
-    actually holds, and callers must render ``None`` as a gap.
+    actually holds, and callers must render None as a gap.
     """
 
     method: str
@@ -157,7 +157,7 @@ def average_ranks(rows: list["MethodRow"]) -> dict[str, Optional[float]]:
     settle that. Each method is averaged only over the metrics it actually
     has, so a missing AUC costs nothing rather than counting as a loss.
 
-    The arithmetic itself is ``domain.ranking``'s, shared with the
+    The arithmetic itself is domain.ranking's, shared with the
     multi-method run's own ranking so the two comparison surfaces cannot
     disagree about which method won.
     """

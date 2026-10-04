@@ -1,10 +1,4 @@
-"""Small pure summarisers used while cataloguing a dataset.
-
-All three are deliberately forgiving: they run *after* a run has already
-succeeded, so a bookkeeping edge case (an oddly typed label column, a
-repository without ``count``) must degrade to a sensible value rather than
-turn a finished experiment into an error.
-"""
+"""Pure helper functions for summarizing dataset characteristics and repository metrics."""
 
 from __future__ import annotations
 
@@ -12,12 +6,7 @@ import numpy as np
 
 
 def class_names(labels: np.ndarray | None) -> list[str]:
-    """Distinct label values, sorted, as strings.
-
-    ``np.unique`` on a mixed-type object array raises, so the fallback keeps
-    catalogue registration working for oddly typed label columns instead of
-    failing the whole recording step.
-    """
+    """Extract distinct sorted class label names as strings from label arrays."""
     if labels is None:
         return []
     try:
@@ -27,12 +16,7 @@ def class_names(labels: np.ndarray | None) -> list[str]:
 
 
 def dtype_summary(dtypes: list[str]) -> str:
-    """Compact ``"float64 x24, int64 x2"``-style summary for a table cell.
-
-    Preserves first-seen order (``dict`` insertion order) rather than
-    alphabetising, so a mostly-numeric file reads as e.g. "float64 x24, str
-    x2" instead of burying the more common type behind the sort order.
-    """
+    """Generate a compact data type summary string (such as float64 x24, int64 x2)."""
     if not dtypes:
         return ""
     counts: dict[str, int] = {}
@@ -42,12 +26,7 @@ def dtype_summary(dtypes: list[str]) -> str:
 
 
 def safe_count(repository: object) -> int:
-    """Read ``repository.count()`` when it exists, else 0.
-
-    ``count`` is an implementation convenience on the Postgres repositories
-    rather than part of the domain protocols, so this stays tolerant of an
-    implementation that omits it.
-    """
+    """Execute repository.count() safely, returning 0 on failure or if unsupported."""
     counter = getattr(repository, "count", None)
     if callable(counter):
         try:

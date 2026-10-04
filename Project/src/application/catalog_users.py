@@ -1,4 +1,4 @@
-"""User accounts in the catalogue."""
+"""User account operations and default user management mixin."""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ from domain.entities import User, UserRole
 
 
 class CatalogUsersMixin:
-    """Account CRUD, plus the starter account a fresh database needs."""
+    """Provides user account CRUD operations and default user provisioning."""
 
     def create_user(
         self, name: str, email: str, role: str | UserRole, password_hash: str = ""
     ) -> User:
+        """Create and persist a new user account."""
         return self._users.add(
             User(
                 name=name.strip(),
@@ -21,24 +22,23 @@ class CatalogUsersMixin:
         )
 
     def update_user(self, user: User) -> User:
+        """Update an existing user account."""
         return self._users.update(user)
 
     def delete_user(self, user_id: int) -> bool:
+        """Delete a user account by ID."""
         return self._users.delete(user_id)
 
     def get_user(self, user_id: int) -> User | None:
+        """Fetch a user account by ID."""
         return self._users.get(user_id)
 
     def list_users(self) -> list[User]:
+        """Fetch all registered user accounts."""
         return self._users.list_all()
 
     def ensure_default_user(self) -> User:
-        """Return some usable user, creating a starter account if the table is empty.
-
-        A brand-new database would otherwise leave every experiment
-        unattributed, and force the user through a dialog before their first
-        run. The account is a normal row and can be renamed or deleted.
-        """
+        """Retrieve the primary user account or initialize a default account on first startup."""
         existing = self._users.list_all()
         if existing:
             return existing[0]

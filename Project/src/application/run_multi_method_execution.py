@@ -1,17 +1,4 @@
-"""Running several methods against one dataset pair, in one experiment.
-
-The orthogonal loop to ``execute_batch``: that one holds the method fixed
-and varies the datasets, this holds the datasets fixed and varies the
-method. Both isolate a failure to the item that caused it, so one method
-that cannot handle the data does not cost the comparison the others.
-
-The whole point is that the methods are comparable, which means everything
-except the method must be identical between them. So the shared head of the
-pipeline — load, preprocess, baseline — runs exactly once and every method
-is handed the same ``PreparedDomains`` instance. Looping ``execute`` per
-method instead would recompute all of that N times: slower, and it would
-leave each method scored against its own separately-measured baseline.
-"""
+"""Multi-method transfer learning execution pipeline on a shared dataset pair."""
 
 from __future__ import annotations
 
@@ -37,30 +24,19 @@ from domain.models import (
 from domain.progress import STAGE_FINALIZING
 from domain.run_control import RunCancelled, RunControl
 
-#: What ``set_pair`` counts here, so the status strip reads "Method 2 of 5"
-#: rather than borrowing the batch path's "Pair".
+# Label used for multi-method progress counter annotations.
 UNIT_LABEL = "Method"
 
 
 class RunMultiMethodExecutionMixin:
-    """``execute_multi_method``: one pair, several methods, one preparation."""
+    """Provides multi-method execution pipeline fanning out over algorithms on a single pair."""
 
     def execute_multi_method(
         self,
         request: MultiMethodTransferLearningRequest,
         control: RunControl | None = None,
     ) -> MultiMethodTransferLearningResult:
-        """Run every method in *request* over the same source/target pair.
-
-        A method that fails (unsupported parameters, a singular matrix, an
-        unlucky eigendecomposition) is recorded as an error against that
-        method and the rest still run — the comparison is worth more with a
-        gap in it than not at all.
-
-        Cancellation stops after whichever method was in flight; the ones
-        that already finished are kept and ``cancelled`` is set on the
-        result rather than raising, so a partial comparison survives.
-        """
+        """Run multiple transfer learning algorithms over a shared preprocessed dataset pair."""
         if not request.method_names:
             raise ValueError("Select at least one method to run.")
 
@@ -77,9 +53,6 @@ class RunMultiMethodExecutionMixin:
         if control is not None:
             control.checkpoint()
 
-        # The loading/preprocessing/baseline stages belong to no single
-        # method, so they are reported without a method index — the strip
-        # shows them once, before the per-method counter starts moving.
         probe_request = TransferLearningRequest(
             method_name=request.method_names[0],
             source_path=request.source_path,
@@ -98,9 +71,6 @@ class RunMultiMethodExecutionMixin:
                 request.standardization,
                 report,
             )
-            # Measured once, from features no method has touched. Every
-            # method's negative-transfer verdict below is against this one
-            # number, which is what makes those verdicts comparable.
             baseline_metrics = measure_baseline(request.classifier, prepared, report, control)
 
             total = len(request.method_names)
@@ -136,7 +106,7 @@ class RunMultiMethodExecutionMixin:
                 except RunCancelled:
                     cancelled = True
                     break
-                except Exception as exc:  # noqa: BLE001 - surfaced per method, not raised
+                except Exception as exc:
                     entries.append(
                         MethodTransferLearningResult(method_name=method_name, error=str(exc))
                     )
@@ -164,11 +134,7 @@ class RunMultiMethodExecutionMixin:
     def _method_request(
         request: MultiMethodTransferLearningRequest, method_name: str
     ) -> TransferLearningRequest:
-        """The shared configuration, addressed to one method.
-
-        Also what gets persisted for that method, so each row in History
-        reads exactly as if the method had been run on its own.
-        """
+        """Create an individual TransferLearningRequest corresponding to a specific method."""
         return TransferLearningRequest(
             method_name=method_name,
             source_path=request.source_path,

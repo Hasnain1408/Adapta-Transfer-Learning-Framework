@@ -1,24 +1,4 @@
-"""The stages of a run, as pieces that can be shared between runs.
-
-``execute`` used to be one straight-line function. It is broken up here
-because a multi-method run needs to do the *first* half once and the second
-half once per method:
-
-    load ─ preprocess ─ baseline ─┬─ adapt(TCA)  ─ classify ─ align
-                                  ├─ adapt(JDA)  ─ classify ─ align
-                                  └─ adapt(CORAL)─ classify ─ align
-
-Sharing the head is not just an optimisation, though it is a large one (the
-loading and preprocessing of a 40 MB ``.mat`` file happens once instead of
-once per method). It is what makes the comparison *sound*: every method
-receives the identical preprocessed matrices — the same objects, not
-equal-valued recomputations — and every method's negative-transfer verdict
-is measured against one baseline number rather than against its own
-separately-computed copy.
-
-``run_single_execution`` composes the same pieces in the same order, so the
-one-method path and the multi-method path cannot drift apart.
-"""
+"""Shared pipeline stages for single-run, batch, and multi-method transfer learning."""
 
 from __future__ import annotations
 
@@ -53,39 +33,17 @@ from domain.progress import (
 )
 from domain.run_control import RunCancelled, RunControl
 
-#: Cap on how many threads BLAS/OpenMP may use for one run's linear algebra
-#: (eigendecompositions, matrix multiplies, the classifier fit/predict).
-#: Left uncapped, OpenBLAS defaults to roughly one thread per logical core;
-#: measured on a 16-core dev machine, a single MEDA run alone pinned over
-#: 900% total CPU. That is enough to starve everything else on the same
-#: machine of scheduler time -- including, over a remote session, the
-#: process actually rendering the editor window, which then reports itself
-#: as "not responding" with no error from this app at all to explain why.
-#: Half the cores (floor 1) keeps a run fast while leaving the rest of the
-#: system able to breathe.
+# Upper bound on thread parallelism for BLAS linear algebra computations.
 MAX_COMPUTE_THREADS = max(1, (os.cpu_count() or 4) // 2)
 
 
 def ignore_progress(*_args, **_kwargs) -> None:
-    """No-op stand-in when a run was started without a ``RunControl``.
-
-    Lets the pipeline call ``report(...)`` unconditionally instead of
-    guarding every call site with ``if control is not None`` — the checks
-    were already the noisiest thing in the code.
-    """
+    """No-op progress callback used when no RunControl token is provided."""
 
 
 @dataclass(frozen=True)
 class PreparedDomains:
-    """Both domains loaded and preprocessed, ready for any method to adapt.
-
-    ``source_features``/``target_features`` are normalized and standardized
-    but not yet adapted. A multi-method run hands the *same instance* to
-    every method, so nothing but the method itself can differ between them.
-    Methods must therefore not mutate what they are given; none of the
-    bundled ones do, and ``TransferLearningMethod.run`` is documented as
-    returning new arrays.
-    """
+    """Container holding loaded and preprocessed source and target dataset domains."""
 
     source_dataset: Dataset
     target_dataset: Dataset
@@ -94,12 +52,12 @@ class PreparedDomains:
 
     @property
     def is_labelled(self) -> bool:
-        """Whether both sides carry labels, i.e. whether anything can be scored."""
+        """True if both source and target datasets contain ground-truth label vectors."""
         return self.source_dataset.labels is not None and self.target_dataset.labels is not None
 
 
 def load_domains(loader, request, report) -> tuple[Dataset, Dataset]:
-    """Read both datasets off disk."""
+    """Load source and target dataset files from disk."""
     report(
         STAGE_LOADING,
         f"{Path(request.source_path).name} → {Path(request.target_path).name}",
@@ -119,7 +77,7 @@ def preprocess_domains(
     standardization: str,
     report,
 ) -> PreparedDomains:
-    """Normalize then standardize, independently per domain, in that order."""
+    """Normalize and standardize feature matrices for both domains."""
     report(STAGE_PREPROCESSING, normalization)
     source_features = apply_normalization(source_dataset.features.copy(), normalization)
     target_features = apply_normalization(target_dataset.features.copy(), normalization)
@@ -139,13 +97,7 @@ def preprocess_domains(
 def measure_baseline(
     classifier: str, prepared: PreparedDomains, report, control: RunControl | None = None
 ) -> EvaluationMetrics | None:
-    """The same classifier over the *un-adapted* features.
-
-    This is the score you would have got by skipping domain adaptation
-    entirely; without it there is nothing to call negative transfer against.
-    Returns ``None`` rather than raising if it fails — a missing baseline
-    costs the negative-transfer verdict, not the run.
-    """
+    """Evaluate target performance on preprocessed features without domain adaptation."""
     if not prepared.is_labelled:
         return None
     if control is not None:
@@ -161,7 +113,7 @@ def measure_baseline(
         )
     except RunCancelled:
         raise
-    except Exception:  # noqa: BLE001 - a missing baseline must not sink the run
+    except Exception:
         return None
     return baseline_metrics
 
@@ -178,27 +130,15 @@ def adapt_and_evaluate(
     run_started: float,
     paused_before: float = 0.0,
 ) -> TransferLearningResult:
-    """Run one method over *prepared* and score it.
-
-    *baseline_metrics* is passed in rather than measured here so a
-    multi-method run can compute it once and hand every method the same
-    figure. *started_at*/*run_started* are the clocks this particular
-    method's result should report, which for a multi-method run is when
-    *this method* started, not when the whole run did.
-    """
+    """Execute feature adaptation for one method, run classification, and assemble results."""
     apply_tunable_parameters(method, request)
 
-    # A one-shot method (CORAL, GFK, TCA) reports only this; the iterative
-    # ones overwrite the detail once per iteration from inside their own
-    # loop, via control.report_iteration.
     report(
         STAGE_ADAPTING,
         f"{method_name} on "
         f"{prepared.source_features.shape[0]}+{prepared.target_features.shape[0]} samples",
     )
 
-    # Timed on its own so the cost attributable to the *method* can be read
-    # apart from the loading and classification around it.
     adaptation_started = perf_counter()
     paused_before_adaptation = control.paused_seconds if control is not None else 0.0
     transformed_source, transformed_target = method.run(
@@ -207,9 +147,6 @@ def adapt_and_evaluate(
         source_labels=prepared.source_dataset.labels,
         control=control,
     )
-    # A pause blocks inside method.run's own checkpoints, so the elapsed wall
-    # clock would otherwise count however long the user left it paused as if
-    # it were compute.
     paused_during_adaptation = (
         control.paused_seconds - paused_before_adaptation if control is not None else 0.0
     )

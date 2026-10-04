@@ -1,10 +1,10 @@
 """Dialogs for managing the persisted catalogue: users and datasets.
 
 Both follow the same shape — a table on top, actions underneath, every write
-routed through :class:`ExperimentCatalogUseCase` so no widget touches SQL.
+routed through ExperimentCatalogUseCase so no widget touches SQL.
 
 This module is the facade; the dialogs live one per topic in
-``user_dialogs.py`` and ``dataset_registry_dialog.py``.
+user_dialogs.py and dataset_registry_dialog.py.
 """
 
 from __future__ import annotations

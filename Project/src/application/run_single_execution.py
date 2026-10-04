@@ -1,15 +1,4 @@
-"""Executing one source→target transfer-learning run.
-
-The pipeline, in order: load both datasets, preprocess, measure a
-no-adaptation baseline, inject the method's tunable parameters, run the
-method, classify the target, measure domain alignment, and assemble the
-result. Each step reports itself *before* it starts, so the progress panel
-names the thing currently blocking rather than the thing that just finished.
-
-The steps themselves live in ``run_pipeline.py`` because the multi-method
-path shares them — see that module for why the split exists. This file is
-the one-method composition of them.
-"""
+"""Single-pair transfer learning execution pipeline mixin."""
 
 from __future__ import annotations
 
@@ -31,11 +20,12 @@ from domain.run_control import RunControl
 
 
 class RunSingleExecutionMixin:
-    """The ``execute`` pipeline for a single dataset pair."""
+    """Provides execution pipeline orchestration for a single source-target dataset pair."""
 
     def execute(
         self, request: TransferLearningRequest, control: RunControl | None = None
     ) -> TransferLearningResult:
+        """Run complete transfer learning pipeline for a single experiment request."""
         started_at = datetime.now()
         run_started = perf_counter()
         if control is not None:
@@ -45,8 +35,6 @@ class RunSingleExecutionMixin:
             supported = ", ".join(sorted(self._methods.keys()))
             raise ValueError(f"Unsupported method: {request.method_name}. Supported: {supported}")
 
-        # Reported before each step rather than after, so the panel names the
-        # thing currently blocking rather than the thing that just finished.
         report = control.report if control is not None else ignore_progress
 
         source_dataset, target_dataset = load_domains(self._loader, request, report)

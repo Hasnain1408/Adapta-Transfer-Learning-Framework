@@ -1,4 +1,4 @@
-"""Recording finished runs — successes with their scores, failures with their error."""
+"""Experiment execution catalogue mixin for recording runs and evaluations."""
 
 from __future__ import annotations
 
@@ -13,14 +13,12 @@ from domain.entities import (
 )
 from domain.models import TransferLearningRequest, TransferLearningResult
 
-#: Hyper-parameters are stored as NULL when the chosen algorithm ignores them,
-#: which the UI renders as "—". Storing 0.0 instead would be a lie: it would
-#: read as "this run used a regularisation of zero".
+# Unused parameter marker mapped to NULL in database records.
 _UNUSED = None
 
 
 class CatalogExperimentsMixin:
-    """Writing experiment/evaluation rows and reading them back."""
+    """Provides experiment execution recording, evaluations persistence, and history retrieval."""
 
     def record_success(
         self,
@@ -29,12 +27,16 @@ class CatalogExperimentsMixin:
         user_id: int | None,
         supported_parameters: frozenset[str] | None = None,
     ) -> ExperimentRecord | None:
-        """Store a completed run: both datasets, the experiment, and its scores.
+        """Persist a successfully completed experiment run, its datasets, and evaluation metrics.
 
-        *supported_parameters* comes from
-        ``RunTransferLearningUseCase.supported_parameters`` and decides which
-        hyper-parameters are meaningful for the chosen algorithm; the rest are
-        stored as NULL. Passing ``None`` records all three.
+        Args:
+            request: Transfer learning execution request parameters.
+            result: Execution result payload containing metrics and domain models.
+            user_id: ID of the authenticated user running the experiment.
+            supported_parameters: Optional set of parameters applicable to the method.
+
+        Returns:
+            ExperimentRecord | None: Persisted experiment record or None if user_id is None.
         """
         if user_id is None:
             return None
@@ -68,8 +70,6 @@ class CatalogExperimentsMixin:
                     correct_predictions=int(metrics.correct_predictions),
                     wrong_predictions=int(metrics.wrong_predictions),
                     auc=metrics.auc,
-                    # Stored so the comparison charts can be rebuilt from the
-                    # database alone, long after the in-memory result is gone.
                     overlap_before=alignment.overlap_before if alignment else None,
                     overlap_after=alignment.overlap_after if alignment else None,
                     mmd_before=alignment.mmd_before if alignment else None,
@@ -90,11 +90,7 @@ class CatalogExperimentsMixin:
         error_message: str,
         supported_parameters: frozenset[str] | None = None,
     ) -> ExperimentRecord | None:
-        """Store a run that raised, so failed configurations are not lost.
-
-        No datasets are catalogued: the failure may well have been the loader
-        refusing the file, in which case there are no statistics to record.
-        """
+        """Persist a failed experiment configuration and its associated error message."""
         if user_id is None:
             return None
 
@@ -132,8 +128,6 @@ class CatalogExperimentsMixin:
             classifier=request.classifier,
             normalization_type=request.normalization,
             standardization_type=request.standardization,
-            # Timezone-aware: the column is TIMESTAMPTZ, and a naive value
-            # would be silently interpreted as the server's zone.
             date=datetime.now(timezone.utc).astimezone(),
             status=status,
             latent_feature=int(request.latent_dim) if uses("latent_dim") else _UNUSED,
@@ -145,18 +139,23 @@ class CatalogExperimentsMixin:
         )
 
     def list_experiments(self, user_id: int | None = None) -> list[ExperimentRecord]:
+        """Fetch all experiment records, optionally filtered by user ID."""
         return self._experiments.list_all(user_id)
 
     def history(self, user_id: int | None = None) -> list[ExperimentHistoryEntry]:
+        """Fetch joined experiment history records including user and evaluation data."""
         return self._experiments.history(user_id)
 
     def get_experiment(self, experiment_id: int) -> ExperimentRecord | None:
+        """Fetch a specific experiment record by ID."""
         return self._experiments.get(experiment_id)
 
     def delete_experiment(self, experiment_id: int) -> bool:
+        """Delete an experiment record by ID (cascading its evaluations)."""
         return self._experiments.delete(experiment_id)
 
     def get_evaluation(self, experiment_id: int) -> EvaluationRecord | None:
+        """Fetch the evaluation record associated with a given experiment ID."""
         return self._evaluations.get_for_experiment(experiment_id)
 
 

@@ -1,20 +1,4 @@
-"""``RunTransferLearningUseCase`` — orchestrates one run or a batch of runs.
-
-The work is split across sibling modules, one per concern:
-
-- ``run_pipeline.py`` — the individual stages, shared by the paths below.
-- ``run_single_execution.py`` — the ``execute`` pipeline for one pair.
-- ``run_batch_execution.py`` — ``execute_batch``, fanning it over every pair.
-- ``run_multi_method_execution.py`` — ``execute_multi_method``, fanning it
-  over every *method* on one pair, sharing a single preparation.
-- ``run_tunables.py`` — which request fields a method actually accepts.
-- ``preprocessing.py`` — normalization/standardization transforms.
-- ``classification.py`` — classifier factory + fit/score evaluation.
-- ``domain_alignment.py`` — MMD/overlap measurement before vs. after.
-
-This file is left holding the wiring: the loader and the method registry,
-and the small accessors the UI asks about before starting anything.
-"""
+"""Orchestrator use case for single, batch, and multi-method transfer learning."""
 
 from __future__ import annotations
 
@@ -28,33 +12,25 @@ from domain.interfaces import DatasetLoader, TransferLearningMethod
 class RunTransferLearningUseCase(
     RunSingleExecutionMixin, RunBatchExecutionMixin, RunMultiMethodExecutionMixin
 ):
-    """Runs a transfer-learning method over a source/target dataset pair."""
+    """Coordinates dataset loading, preprocessing, adaptation algorithms, and evaluation."""
 
     def __init__(self, loader: DatasetLoader, methods: list[TransferLearningMethod]) -> None:
+        """Initialize use case with dataset loader and available transfer learning methods."""
         self._loader = loader
         self._methods = {method.name: method for method in methods}
 
     @property
     def method_names(self) -> list[str]:
-        """Registered method names, in the order they were configured."""
+        """Return the list of registered algorithm method names."""
         return list(self._methods)
 
     def dataset_has_combined_domains(self, path: str) -> bool:
-        """Whether *path* alone carries both a source and a target half.
-
-        Delegates to the loader when it supports the check (only
-        ``MATDatasetLoader`` does today); other ``DatasetLoader``
-        implementations simply report ``False``, meaning "use two files".
-        """
+        """Check whether the given dataset file contains combined source and target splits."""
         checker = getattr(self._loader, "has_combined_domains", None)
         return bool(checker(path)) if checker is not None else False
 
     def supported_parameters(self, method_name: str) -> frozenset[str]:
-        """Which tunable parameters the named method actually consumes.
-
-        Mirrors the ``hasattr`` rule ``execute`` uses to inject them, so the UI
-        can disable controls that would otherwise be silently ignored.
-        """
+        """Return the set of tunable parameter names supported by the named method."""
         method = self._methods.get(method_name)
         if method is None:
             return frozenset()

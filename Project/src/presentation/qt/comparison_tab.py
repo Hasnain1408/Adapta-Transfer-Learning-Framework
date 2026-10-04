@@ -5,7 +5,7 @@ chosen source→target pair it reads every scored experiment back out of the
 database and puts the methods side by side on performance, ranking, domain
 alignment, execution cost, and transfer benefit.
 
-Everything here is read from ``evaluations`` rows. Nothing is recomputed,
+Everything here is read from evaluations rows. Nothing is recomputed,
 estimated, or synthesised — a metric that was never recorded (rows written
 before a column existed, an AUC the classifier could not produce) is drawn
 as a gap and named in the caption, never as a zero. A zero-height bar and a

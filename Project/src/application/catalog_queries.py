@@ -1,4 +1,4 @@
-"""Read-only queries over the catalogue, for the comparison module and status bar."""
+"""Read-only queries over the experiment catalogue for comparisons and statistics."""
 
 from __future__ import annotations
 
@@ -7,14 +7,10 @@ from domain.entities import ExperimentHistoryEntry
 
 
 class CatalogQueriesMixin:
-    """Domain-pair lookups, per-pair result sets, and row counts."""
+    """Provides read-only queries for domain pairs, comparative benchmark sets, and table counts."""
 
     def domain_pairs(self, user_id: int | None = None) -> list[tuple[str, str]]:
-        """Distinct (source, target) domains that have at least one score.
-
-        Pairs with no evaluation row are left out: there is nothing to plot
-        for a run that failed or had no labels.
-        """
+        """Return distinct source-target domain name pairs that possess recorded evaluations."""
         return sorted(
             {
                 (entry.experiment.source_domain, entry.experiment.target_domain)
@@ -30,12 +26,16 @@ class CatalogQueriesMixin:
         user_id: int | None = None,
         latest_per_method: bool = True,
     ) -> list[ExperimentHistoryEntry]:
-        """Stored, scored runs for one source→target pair.
+        """Fetch recorded benchmark results for a specific source and target domain pair.
 
-        With *latest_per_method* (the default) only the most recent run of
-        each algorithm is returned — re-running a method to tweak it would
-        otherwise put the same algorithm on a comparison chart several times
-        with no way to tell the bars apart.
+        Args:
+            source_domain: Source domain identifier name.
+            target_domain: Target domain identifier name.
+            user_id: Optional user ID filter.
+            latest_per_method: If True, returns only the most recent run for each algorithm.
+
+        Returns:
+            list[ExperimentHistoryEntry]: Filtered history records sorted by date descending.
         """
         matching = [
             entry
@@ -58,7 +58,7 @@ class CatalogQueriesMixin:
         return latest
 
     def statistics(self) -> dict[str, int]:
-        """Row counts per table, for the status bar and the About box."""
+        """Return table row counts for application status display."""
         return {
             "users": safe_count(self._users),
             "datasets": safe_count(self._datasets),

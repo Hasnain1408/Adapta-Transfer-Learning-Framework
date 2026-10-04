@@ -1,4 +1,4 @@
-"""The dataset registry: cataloguing files as they get used."""
+"""Dataset catalogue mixin for registering and retrieving dataset metadata."""
 
 from __future__ import annotations
 
@@ -10,26 +10,26 @@ from domain.models import Dataset
 
 
 class CatalogDatasetsMixin:
-    """Registering and reading the catalogue of dataset files."""
+    """Provides dataset metadata registration and querying operations."""
 
     def register_dataset(self, path: str, dataset: Dataset) -> DatasetRecord | None:
-        """Catalogue the file at *path* using the statistics of the loaded *dataset*.
+        """Register a dataset file in the catalogue using computed dataset statistics.
 
-        Returns ``None`` for a path whose extension the catalogue does not
-        model, rather than raising — the run itself already succeeded, so a
-        bookkeeping gap must not surface as an error.
+        Returns None if the file format is unsupported without raising an exception,
+        allowing execution to proceed smoothly.
+
+        Args:
+            path: Source file path of the dataset.
+            dataset: In-memory Dataset model containing features, labels, and types.
+
+        Returns:
+            DatasetRecord | None: Persisted dataset catalogue record or None.
         """
         try:
             file_format = DatasetFormat.from_path(path)
         except ValueError:
             return None
 
-        # upsert_by_path dedupes on this exact string, so two spellings of
-        # the same file — a relative path from one working directory, an
-        # absolute path from another — must resolve to the same key or they
-        # register as two "different" datasets. resolve() is best-effort:
-        # a path that no longer exists (a stale registration) falls back to
-        # the literal string rather than raising.
         try:
             canonical_path = str(Path(path).expanduser().resolve())
         except OSError:
@@ -52,16 +52,17 @@ class CatalogDatasetsMixin:
         return self._datasets.upsert_by_path(record)
 
     def list_datasets(self) -> list[DatasetRecord]:
+        """Return all catalogued dataset records."""
         return self._datasets.list_all()
 
     def get_dataset(self, dataset_id: int | None) -> DatasetRecord | None:
-        """``None`` in, ``None`` out — lets callers pass an experiment's
-        possibly-unset ``source_dataset_id``/``target_dataset_id`` directly."""
+        """Fetch a catalogued dataset record by ID, returning None if dataset_id is None."""
         if dataset_id is None:
             return None
         return self._datasets.get(dataset_id)
 
     def delete_dataset(self, dataset_id: int) -> bool:
+        """Delete a dataset record from the catalogue by ID."""
         return self._datasets.delete(dataset_id)
 
 

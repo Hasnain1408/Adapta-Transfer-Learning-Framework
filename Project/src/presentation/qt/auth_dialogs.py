@@ -26,8 +26,8 @@ from presentation.qt.title_bar import install_title_bar
 class AuthDialog(AuthPagesMixin, QDialog):
     """Blocks until the user logs in, registers, or cancels.
 
-    :meth:`authenticated_user` returns the resulting :class:`User` once
-    :meth:`exec_` returns ``QDialog.Accepted``; it is ``None`` otherwise
+    authenticated_user returns the resulting User once
+    exec_ returns QDialog.Accepted; it is None otherwise
     (including after a plain cancel).
     """
 

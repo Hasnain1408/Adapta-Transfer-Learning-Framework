@@ -1,11 +1,4 @@
-"""Feature preprocessing: normalization and standardization transforms.
-
-Pulled out of ``RunTransferLearningUseCase.execute``, where these were two
-closures rebuilt on every call. Pure functions dispatching on the exact
-strings the UI's normalization/standardization dropdowns send — see
-``main_window_ui.py``'s ``NORMALIZATION_OPTIONS`` / ``STANDARDIZATION_OPTIONS``
-value column — with a silent pass-through fallback for anything unmatched.
-"""
+"""Feature matrix preprocessing: normalization and standardization transformations."""
 
 from __future__ import annotations
 
@@ -14,6 +7,7 @@ from sklearn.preprocessing import MinMaxScaler, Normalizer, RobustScaler, Standa
 
 
 def apply_normalization(features: np.ndarray, normalization_type: str) -> np.ndarray:
+    """Apply feature normalization transform according to the specified option."""
     if normalization_type == "Min-Max Normalization":
         return MinMaxScaler().fit_transform(features)
     if normalization_type == "Z-score Standardization":
@@ -38,6 +32,7 @@ def apply_normalization(features: np.ndarray, normalization_type: str) -> np.nda
 
 
 def apply_standardization(features: np.ndarray, standardization_type: str) -> np.ndarray:
+    """Apply feature standardization transform according to the specified option."""
     if standardization_type == "Z-score Standardization":
         return StandardScaler().fit_transform(features)
     if standardization_type == "Robust Standardization":

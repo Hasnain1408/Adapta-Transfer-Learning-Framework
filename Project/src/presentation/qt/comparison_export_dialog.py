@@ -19,7 +19,7 @@ from presentation.qt.title_bar import install_title_bar
 class ComparisonExportDialog(QDialog):
     """Pick which comparison views (and the table) go into the PDF.
 
-    Separate from ``ExportOptionsDialog``: that one gates the sections of a
+    Separate from ExportOptionsDialog: that one gates the sections of a
     *single run's* report, while these are the comparison views, which vary
     with what the database actually holds.
     """

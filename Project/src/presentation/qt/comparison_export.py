@@ -71,9 +71,9 @@ class ComparisonExportMixin:
     def render_to_base64_html(self) -> str:
         """Current chart as an inline PNG for the PDF report.
 
-        See ``REPORT_IMAGE_WIDTH`` for why this is a ``width`` attribute
+        See REPORT_IMAGE_WIDTH for why this is a width attribute
         rather than a CSS style — Qt's print engine ignores percentage/
-        max-width styling on ``<img>`` and renders it at native pixel size,
+        max-width styling on <img> and renders it at native pixel size,
         which is wider than a printed page and gets clipped at the margin.
         """
         import base64

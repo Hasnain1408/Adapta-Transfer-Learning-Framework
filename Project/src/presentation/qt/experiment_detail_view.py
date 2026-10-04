@@ -1,6 +1,6 @@
 """Full-detail read-only view of one recorded experiment.
 
-Opened as a closable tab in ``MainWindow``'s results tab strip when a row in
+Opened as a closable tab in MainWindow's results tab strip when a row in
 the History tab is clicked. The history table only shows a slice of one row
 per experiment; this joins together everything the experiment, evaluation,
 user, and (source/target) dataset rows know about that run.

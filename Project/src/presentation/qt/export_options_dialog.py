@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
 from presentation.qt import message_box
 from presentation.qt.title_bar import install_title_bar
 
-#: Stable keys shared with ``report.py``'s ``sections`` parameter.
+#: Stable keys shared with report.py's sections parameter.
 SECTION_CONFIGURATION = "configuration"
 SECTION_DATASET = "dataset"
 SECTION_EVALUATION = "evaluation"
@@ -43,9 +43,9 @@ _SECTION_LABELS: list[tuple[str, str]] = [
 class ExportOptionsDialog(QDialog):
     """Modal checkbox picker for which report sections to include.
 
-    Call :meth:`selected_sections` after ``exec_()`` returns ``Accepted``;
-    it is a ``set`` of the ``SECTION_*`` keys above, ready to pass straight
-    to ``report.build_report_html`` (and friends) as ``sections``.
+    Call selected_sections after exec_() returns Accepted;
+    it is a set of the SECTION_* keys above, ready to pass straight
+    to report.build_report_html (and friends) as sections.
     """
 
     def __init__(

@@ -5,25 +5,25 @@ what the app does and which of its parts they want. This page answers that
 first — it names the modules, says what each one is for, and lets the user
 pick one — and only then hands over to the workspace.
 
-It is a *page*, not a separate window. ``MainWindow`` stacks it against the
-workspace in a ``QStackedWidget``, so switching between the two costs
+It is a *page*, not a separate window. MainWindow stacks it against the
+workspace in a QStackedWidget, so switching between the two costs
 nothing, keeps one title bar and one theme, and leaves the status bar (and
 therefore a running experiment's progress) visible throughout.
 
 Three things move on this page, and each is drawn rather than animated
-through a ``QGraphicsEffect`` — a widget may hold only one effect, and the
+through a QGraphicsEffect — a widget may hold only one effect, and the
 cards need their paint pipeline for hover *and* intro at the same time:
 
-- ``_Backdrop`` — slow drifting colour fields behind everything. Rendered
+- _Backdrop — slow drifting colour fields behind everything. Rendered
   into a quarter-scale pixmap and scaled up, which both costs a quarter of
   the fill and gives the soft blur for free.
-- ``_AdaptationView`` — two point clouds converging. This is the app's own
+- _AdaptationView — two point clouds converging. This is the app's own
   subject matter (the icon carries the same motif), so the one animation
   that runs continuously is also the one that explains what the app is for.
-- ``NavigationCard`` — a fade-and-rise on first show, staggered across the
+- NavigationCard — a fade-and-rise on first show, staggered across the
   grid, and a hover state that warms the card towards its accent.
 
-Every animation stops when the page is hidden (see ``hideEvent``), so
+Every animation stops when the page is hidden (see hideEvent), so
 nothing repaints behind the workspace.
 """
 
@@ -67,7 +67,7 @@ _FRAME_MS = 33
 class Module:
     """One navigable part of the app, as advertised on the landing page.
 
-    *key* is what :attr:`LandingPage.navigate` emits — ``MainWindow`` owns
+    *key* is what :attr:LandingPage.navigate emits — MainWindow owns
     the mapping from key to action, so this module never imports it.
     """
 
@@ -143,10 +143,10 @@ def _with_alpha(color: QColor, alpha: int) -> QColor:
 
 
 class NavigationCard(QFrame):
-    """A clickable tile for one :class:`Module`, painted end to end.
+    """A clickable tile for one Module, painted end to end.
 
     Everything — icon tile, title, description, hover glow — is drawn in
-    :meth:`paintEvent` rather than composed from child labels. That is what
+    paintEvent rather than composed from child labels. That is what
     makes the intro's rise possible: a translate on the painter moves the
     whole card, whereas child widgets would stay pinned wherever the grid
     layout put them.
@@ -213,7 +213,7 @@ class NavigationCard(QFrame):
 
         An unavailable card stays clickable on purpose. "Sign in to see your
         history" is a step the user can take, and a card that swallows the
-        click teaches nothing — ``MainWindow`` answers with the fix instead.
+        click teaches nothing — MainWindow answers with the fix instead.
         """
         self._available = available
         self._note = note
@@ -426,7 +426,7 @@ class _AdaptationView(QFrame):
         self.update()
 
     def _convergence(self) -> tuple[float, float]:
-        """``(mix, opacity)`` for the current phase.
+        """(mix, opacity) for the current phase.
 
         The cycle deliberately does not run backwards at the end — watching
         adapted domains pull back apart would show something the app never
@@ -527,9 +527,9 @@ class _AdaptationView(QFrame):
 class LandingPage(QWidget):
     """The app's front door: hero, module grid, and session actions.
 
-    Emits :attr:`navigate` with a module key (see :data:`MODULES`) or one of
-    the session keys ``"auth"``, ``"theme"``, ``"exit"``. It holds no
-    reference to ``MainWindow`` and knows nothing about what any key does,
+    Emits :attr:navigate with a module key (see MODULES) or one of
+    the session keys "auth", "theme", "exit". It holds no
+    reference to MainWindow and knows nothing about what any key does,
     so the routing table stays in one place on the window side.
     """
 
@@ -720,7 +720,7 @@ class LandingPage(QWidget):
         """Reflect the current database/auth state on the page.
 
         Cards whose module needs something the user does not have yet are
-        marked unavailable *with the reason* — they still emit ``navigate``
+        marked unavailable *with the reason* — they still emit navigate
         so the window can offer the missing step.
         """
         self._auth_button.setText("Log Out" if signed_in else "Log In")

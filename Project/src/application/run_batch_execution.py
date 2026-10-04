@@ -1,4 +1,4 @@
-"""Fanning one configuration out over every ordered dataset pair."""
+"""Batch transfer learning execution across all ordered dataset pairs."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from datetime import datetime
 from itertools import permutations
 from time import perf_counter
 
-from domain.progress import STAGE_FINALIZING
 from domain.models import (
     BatchTransferLearningRequest,
     BatchTransferLearningResult,
@@ -14,28 +13,17 @@ from domain.models import (
     PairTransferLearningResult,
     TransferLearningRequest,
 )
+from domain.progress import STAGE_FINALIZING
 from domain.run_control import RunCancelled, RunControl
 
 
 class RunBatchExecutionMixin:
-    """``execute_batch``: every ordered pair, one shared configuration."""
+    """Provides batch execution orchestration fanning out over all ordered dataset pairs."""
 
     def execute_batch(
         self, request: BatchTransferLearningRequest, control: RunControl | None = None
     ) -> BatchTransferLearningResult:
-        """Run the same configuration over every ordered (source, target) pair.
-
-        A single bad pair (unreadable file, incompatible shapes, ...) is
-        recorded as an error on that pair rather than aborting the whole
-        batch, so one broken file doesn't cost every other combination.
-
-        *control*, when given, is checked once per pair (and again inside
-        each pair's own ``execute``/``method.run``, for iterative methods).
-        A cancellation stops the batch after whichever pair was in flight;
-        pairs that already finished are kept and ``cancelled`` is set on the
-        returned result rather than raising, so the caller sees a partial
-        batch instead of losing it entirely.
-        """
+        """Run the configured transfer learning pipeline across all ordered dataset pairs."""
         if len(request.file_paths) < 2:
             raise ValueError("Batch mode requires at least two dataset files.")
 
@@ -51,9 +39,6 @@ class RunBatchExecutionMixin:
                 except RunCancelled:
                     cancelled = True
                     break
-                # Stamped on every update the pair's own execute() emits, so
-                # the panel can show "pair 3 of 12 — Adapting" without
-                # execute() needing to know it is part of a batch.
                 control.set_pair(position, len(ordered_pairs))
 
             pair_request = TransferLearningRequest(
@@ -76,7 +61,7 @@ class RunBatchExecutionMixin:
             except RunCancelled:
                 cancelled = True
                 break
-            except Exception as exc:  # noqa: BLE001 - surfaced per-pair, not raised
+            except Exception as exc:
                 pairs.append(
                     PairTransferLearningResult(source_path=source_path, target_path=target_path, error=str(exc))
                 )

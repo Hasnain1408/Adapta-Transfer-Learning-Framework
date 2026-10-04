@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 def format_duration(seconds: float | None) -> str:
-    """A run length as a short human string; ``""`` for missing or negative.
+    """A run length as a short human string; "" for missing or negative.
 
     Sub-second runs keep three decimals because the fast methods (CORAL,
     GFK) finish in a few milliseconds on small datasets, and rounding those
