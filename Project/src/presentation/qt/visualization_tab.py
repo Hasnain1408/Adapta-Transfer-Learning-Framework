@@ -160,10 +160,10 @@ class VisualizationTab(QWidget):
         self._color_combo.setToolTip("What the point colours encode")
         self._color_combo.currentTextChanged.connect(self._render)
 
-        self._show_classes_check = QCheckBox("Show Classes")
+        self._show_classes_check = QCheckBox("Show Class List")
         self._show_classes_check.setChecked(True)
         self._show_classes_check.setToolTip(
-            "Off falls back to plain domain colouring, ignoring class labels"
+            "Show or hide the class legend without changing the plot"
         )
         self._show_classes_check.toggled.connect(self._on_show_classes_toggled)
 
@@ -430,7 +430,7 @@ class VisualizationTab(QWidget):
         """Grey out class colouring when there are no labels to colour by."""
         has_labels = self._has_class_labels()
         self._show_classes_check.setEnabled(has_labels)
-        self._color_combo.setEnabled(has_labels and self._show_classes_check.isChecked())
+        self._color_combo.setEnabled(has_labels)
         if not has_labels:
             self._show_classes_check.setToolTip("This run has no labels to group by")
             self._color_combo.blockSignals(True)
@@ -580,9 +580,7 @@ class VisualizationTab(QWidget):
 
         color_mode = self._color_combo.currentText()
         use_classes = (
-            self._show_classes_check.isChecked()
-            and self._show_classes_check.isEnabled()
-            and color_mode in (COLOR_BY_CLASS, COLOR_BY_BOTH)
+            color_mode in (COLOR_BY_CLASS, COLOR_BY_BOTH)
             and (source_labels is not None or target_labels is not None)
         )
 
@@ -613,7 +611,8 @@ class VisualizationTab(QWidget):
             pad=6,
         )
         axes.grid(True, linestyle="--", alpha=0.3)
-        axes.legend(fontsize=7, loc="best", framealpha=0.85)
+        if self._show_classes_check.isChecked():
+            axes.legend(fontsize=7, loc="best", framealpha=0.85)
 
         self._register_hover(axes, source_2d, target_2d, source_labels, target_labels)
 
