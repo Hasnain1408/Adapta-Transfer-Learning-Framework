@@ -67,10 +67,8 @@ from presentation.qt.visualization_plots import (
     COLOR_BY_BOTH,
     COLOR_BY_CLASS,
     COLOR_BY_DOMAIN,
-    overlay_class_rings,
     plot_by_class,
     plot_by_domain,
-    plot_by_prediction,
 )
 from presentation.qt.visualization_projection import (
     MAX_PLOT_SAMPLES,
@@ -169,15 +167,6 @@ class VisualizationTab(QWidget):
         )
         self._show_classes_check.toggled.connect(self._on_show_classes_toggled)
 
-        self._show_prediction_check = QCheckBox("Show Prediction")
-        self._show_prediction_check.setChecked(False)
-        self._show_prediction_check.setToolTip(
-            "Colour target points by prediction outcome: "
-            "green triangle = correct, red X = incorrect. "
-            "Requires a run with classifier predictions."
-        )
-        self._show_prediction_check.toggled.connect(self._on_show_prediction_toggled)
-
         self._reset_button = QPushButton("Reset Visualization")
         self._reset_button.setCursor(Qt.PointingHandCursor)
         self._reset_button.setToolTip("Restore every control above to its default")
@@ -198,7 +187,6 @@ class VisualizationTab(QWidget):
             bar.addWidget(label)
             bar.addWidget(widget)
         bar.addWidget(self._show_classes_check)
-        bar.addWidget(self._show_prediction_check)
         bar.addStretch(1)
         bar.addWidget(self._reset_view_button)
         bar.addWidget(self._reset_button)
@@ -421,9 +409,6 @@ class VisualizationTab(QWidget):
         self._show_classes_check.blockSignals(True)
         self._show_classes_check.setChecked(True)
         self._show_classes_check.blockSignals(False)
-        self._show_prediction_check.blockSignals(True)
-        self._show_prediction_check.setChecked(False)
-        self._show_prediction_check.blockSignals(False)
         self._perplexity_input.setValue(_TSNE_DEFAULT_PERPLEXITY)
         self._iterations_input.setValue(_TSNE_DEFAULT_ITERATIONS)
         self._tsne_bar.setVisible(False)
@@ -441,18 +426,10 @@ class VisualizationTab(QWidget):
         self._sync_class_controls()
         self._render()
 
-    def _on_show_prediction_toggled(self, checked: bool) -> None:
-        # Prediction mode takes over the whole plot colour scheme, so the
-        # class controls are irrelevant while it is active.
-        self._sync_class_controls()
-        self._render()
-
     def _sync_class_controls(self) -> None:
         """Grey out class colouring when there are no labels to colour by."""
         has_labels = self._has_class_labels()
 
-        # Class controls are independent of prediction mode — both can be
-        # shown at the same time.
         self._show_classes_check.setEnabled(has_labels)
 
         self._color_combo.setEnabled(has_labels)
@@ -461,20 +438,6 @@ class VisualizationTab(QWidget):
             self._color_combo.blockSignals(True)
             self._color_combo.setCurrentText(COLOR_BY_DOMAIN)
             self._color_combo.blockSignals(False)
-
-        # Inform the user that prediction mode is unavailable when there are
-        # no predictions stored on the result.
-        if not self._has_predictions():
-            self._show_prediction_check.setEnabled(False)
-            self._show_prediction_check.setToolTip(
-                "No predictions available — run the experiment with a classifier first"
-            )
-        else:
-            self._show_prediction_check.setEnabled(True)
-            self._show_prediction_check.setToolTip(
-                "Colour target points by prediction outcome: "
-                "green triangle = correct, red X = incorrect."
-            )
 
     def _recompute_tsne(self) -> None:
         # Only the t-SNE entries are stale; PCA does not depend on these.
@@ -498,14 +461,6 @@ class VisualizationTab(QWidget):
         return result is not None and (
             result.source_dataset.labels is not None
             or result.target_dataset.labels is not None
-        )
-
-    def _has_predictions(self) -> bool:
-        result = self._result
-        return (
-            result is not None
-            and result.prediction_correctness is not None
-            and len(result.prediction_correctness) > 0
         )
 
     def _stage_matrices(self, stage: str) -> tuple[np.ndarray, np.ndarray] | None:
@@ -578,14 +533,7 @@ class VisualizationTab(QWidget):
             return
 
         stage = self._stage_combo.currentText()
-        use_prediction = self._show_prediction_check.isChecked() and self._has_predictions()
-        if stage == STAGE_BOTH:
-            # Predictions are only defined on post-adaptation features.
-            # Showing the same prediction overlay on both panels would
-            # duplicate the chart, so limit to After when prediction mode is on.
-            stages = [STAGE_AFTER] if use_prediction else [STAGE_BEFORE, STAGE_AFTER]
-        else:
-            stages = [stage]
+        stages = [STAGE_BEFORE, STAGE_AFTER] if stage == STAGE_BOTH else [stage]
 
         # t-SNE can take seconds on a large run; the cursor is the only hint
         # the user gets that the app is working rather than wedged.
@@ -632,32 +580,13 @@ class VisualizationTab(QWidget):
         source_labels = self._labels_for(result.source_dataset.labels, src_idx)
         target_labels = self._labels_for(result.target_dataset.labels, tgt_idx)
 
-        # Prediction mode colours target points by correctness.
-        use_prediction = (
-            self._show_prediction_check.isChecked()
-            and self._has_predictions()
-        )
         color_mode = self._color_combo.currentText()
         use_classes = (
             color_mode in (COLOR_BY_CLASS, COLOR_BY_BOTH)
             and (source_labels is not None or target_labels is not None)
         )
 
-        if use_prediction and use_classes:
-            # Show prediction correctness colouring first, then overlay class
-            # boundary rings so both pieces of information are visible together.
-            correctness_full = result.prediction_correctness
-            correctness_subset = [correctness_full[i] for i in tgt_idx]
-            plot_by_prediction(axes, source_2d, target_2d, correctness_subset, self._palette)
-            # Overlay class membership as edge rings on each point so the
-            # class structure remains visible without hiding correctness colours.
-            overlay_class_rings(axes, source_2d, target_2d, source_labels, target_labels)
-        elif use_prediction:
-            # Align correctness list to the subsampled target indices.
-            correctness_full = result.prediction_correctness
-            correctness_subset = [correctness_full[i] for i in tgt_idx]
-            plot_by_prediction(axes, source_2d, target_2d, correctness_subset, self._palette)
-        elif use_classes:
+        if use_classes:
             plot_by_class(
                 axes,
                 source_2d,
