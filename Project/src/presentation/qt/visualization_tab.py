@@ -40,7 +40,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt5.QtGui import QCursor
+from PyQt5.QtGui import QColor, QCursor, QPalette
 
 import matplotlib
 
@@ -350,7 +350,14 @@ class VisualizationTab(QWidget):
         self._toolbar.setStyleSheet(
             f"background-color: {palette['surface_alt']}; border: 1px solid {palette['border']};"
             " border-radius: 7px; padding: 2px;"
+            f" QToolTip {{ background-color: {palette['tooltip_bg']};"
+            f" color: {palette['tooltip_text']};"
+            f" border: 1px solid {palette['border_strong']}; }}"
         )
+        toolbar_palette = self._toolbar.palette()
+        toolbar_palette.setColor(QPalette.ToolTipBase, QColor(palette["tooltip_bg"]))
+        toolbar_palette.setColor(QPalette.ToolTipText, QColor(palette["tooltip_text"]))
+        self._toolbar.setPalette(toolbar_palette)
         self._warning_label.setStyleSheet(
             f"background-color: {palette['surface_alt']}; color: {palette['danger']};"
             f" border: 1px solid {palette['danger']}; border-radius: 8px; padding: 9px;"
