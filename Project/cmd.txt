@@ -9,3 +9,22 @@ pip install -r requirements.txt
 cd Project
 source venv/bin/activate
 python3 src/main.py
+
+====== make executable ============
+
+nano ~/.local/share/applications/Adapta.desktop
+
+paste this
+-----xxx-----
+[Desktop Entry]
+Type=Application
+Name=Adapta Transfer Learning Studio
+Comment=Run transfer-learning and domain-adaptation experiments
+Exec=/home/hasnain/Desktop/BSSE/Semester-08/SPL-3/Project/dist/Adapta
+Icon=/home/hasnain/Desktop/BSSE/Semester-08/SPL-3/Project/src/presentation/qt/assets/app_icon.svg
+Terminal=false
+Categories=Science;Education;
+StartupNotify=true
+
+To update executable, run these 2 command from (hasnain@hasnain-IdeaPad:~$):
+update-desktop-database ~/.local/share/applications/

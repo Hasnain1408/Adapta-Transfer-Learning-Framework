@@ -16,8 +16,8 @@ import matplotlib
 matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
-    NavigationToolbar2QT as NavigationToolbar,
 )
+from presentation.qt.safe_toolbar import SafeNavigationToolbar as NavigationToolbar
 from matplotlib.figure import Figure
 
 from domain.models import TransferLearningResult
