@@ -97,9 +97,9 @@ QPushButton {
     border: 1px solid $border_strong;
     border-radius: 7px;
     color: $text;
-    padding: 7px 16px;
+    padding: 6px 10px;
     font-weight: 500;
-    min-height: 20px;
+    min-height: 22px;
 }
 QPushButton:hover {
     background-color: $surface;
@@ -120,8 +120,9 @@ QPushButton#runButton {
     background-color: $accent;
     border: 1px solid $accent;
     color: #04211d;
-    font-weight: 700;
-    padding: 8px 22px;
+    font-weight: 600;
+    padding: 6px 8px;
+    min-height: 22px;
 }
 QPushButton#runButton:hover {
     background-color: $accent_hover;
