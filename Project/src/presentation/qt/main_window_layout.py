@@ -279,7 +279,6 @@ class MainWindowLayoutMixin:
         self._classifier_label = self._field_label("Classifier")
         self._kernel_label = self._field_label("Kernel")
         self._norm_label = self._field_label("Normalization")
-        self._std_label = self._field_label("Standardization")
         self._reg_label = self._field_label("Regularization (λ)")
         self._dim_label = self._field_label("Latent Dimensions")
         self._mu_label = self._field_label("Mu (μ)")
@@ -297,7 +296,6 @@ class MainWindowLayoutMixin:
             (self._classifier_label, self._classifier_combo),
             (self._kernel_label, self._kernel_combo),
             (self._norm_label, self._norm_combo),
-            (self._std_label, self._std_combo),
             (self._reg_label, self._reg_input),
             (self._dim_label, self._dim_input),
             (self._mu_label, self._mu_input),
