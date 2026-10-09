@@ -122,8 +122,15 @@ def install_title_bar_on_grid(window: QWidget, title: str) -> TitleBar:
     """
     window.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
     layout = window.layout()
-    column_count = layout.columnCount()
+    if layout is None:
+        outer = QVBoxLayout(window)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        title_bar = TitleBar(window, title)
+        outer.addWidget(title_bar)
+        return title_bar
 
+    column_count = max(layout.columnCount(), 1)
     positions = [layout.getItemPosition(i) for i in range(layout.count())]
     items = [layout.takeAt(i) for i in reversed(range(layout.count()))][::-1]
     for item, (row, column, row_span, column_span) in zip(items, positions):

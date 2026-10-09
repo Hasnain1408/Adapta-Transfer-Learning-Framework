@@ -28,6 +28,7 @@ from presentation.qt.report import (
     build_report_html,
 )
 from presentation.qt.style import build_style_sheet
+from presentation.qt.title_bar import install_title_bar_on_grid
 
 _KERNEL_LABELS = {value: label for label, value in KERNEL_OPTIONS}
 
@@ -208,6 +209,7 @@ class MainWindowReportMixin:
         dialog.setAcceptMode(QFileDialog.AcceptSave)
         dialog.setDefaultSuffix("pdf")
         dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, "Export PDF Report")
         if dialog.exec_() != QDialog.Accepted:
             return
 

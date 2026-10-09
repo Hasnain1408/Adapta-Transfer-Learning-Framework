@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import QDialog, QFileDialog, QLineEdit
 
 from presentation.qt.main_window_ui import DATASET_FILTER
 from presentation.qt.style import build_style_sheet
+from presentation.qt.title_bar import install_title_bar_on_grid
 
 
 class MainWindowDatasetsMixin:
@@ -51,6 +52,7 @@ class MainWindowDatasetsMixin:
         dialog.setFileMode(QFileDialog.ExistingFile)
         dialog.setAcceptMode(QFileDialog.AcceptOpen)
         dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, title)
         if dialog.exec_() == QDialog.Accepted:
             selected_files = dialog.selectedFiles()
             if selected_files:
@@ -142,6 +144,7 @@ class MainWindowDatasetsMixin:
         dialog.setFileMode(QFileDialog.ExistingFiles)
         dialog.setAcceptMode(QFileDialog.AcceptOpen)
         dialog.setStyleSheet(build_style_sheet(self._palette))
+        install_title_bar_on_grid(dialog, "Select Dataset Files")
         file_paths = []
         if dialog.exec_() == QDialog.Accepted:
             file_paths = dialog.selectedFiles()
