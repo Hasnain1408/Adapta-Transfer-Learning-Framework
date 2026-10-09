@@ -42,7 +42,11 @@ class MainWindowDatasetsMixin:
         self._target_input.setText(source_text)
 
     def _pick_file(self, target_input: QLineEdit, title: str) -> None:
-        start_dir = target_input.text().strip() or str(Path.cwd())
+        current_text = target_input.text().strip()
+        if current_text and Path(current_text).exists():
+            start_dir = str(Path(current_text).parent if Path(current_text).is_file() else Path(current_text))
+        else:
+            start_dir = str(Path.cwd())
         dialog = QFileDialog(self, title, start_dir, DATASET_FILTER)
         dialog.setOption(QFileDialog.DontUseNativeDialog, True)
         dialog.setFileMode(QFileDialog.ExistingFile)

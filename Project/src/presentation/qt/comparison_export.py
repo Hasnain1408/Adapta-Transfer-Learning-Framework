@@ -218,9 +218,6 @@ class ComparisonExportMixin:
         dialog.setOption(QFileDialog.DontUseNativeDialog, True)
         dialog.setAcceptMode(QFileDialog.AcceptSave)
         dialog.setDefaultSuffix("csv")
-        from presentation.qt.style import build_style_sheet
-        from presentation.qt.title_bar import install_title_bar_on_grid
-
         dialog.setStyleSheet(build_style_sheet(self._palette))
         install_title_bar_on_grid(dialog, "Export Comparison CSV")
         from PyQt5.QtWidgets import QDialog

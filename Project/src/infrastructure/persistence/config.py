@@ -17,12 +17,12 @@ The tiny ``.env`` reader below exists so the project does not need
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from urllib.parse import quote_plus
 
-#: ``Project/.env`` — resolved from this file so it is found regardless of the
-#: working directory the app was launched from.
-ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+#: ``Project/.env`` default source location.
+DEFAULT_SOURCE_ENV = Path(__file__).resolve().parents[3] / ".env"
 
 #: Neon terminates unencrypted connections, so this is the floor, not a
 #: preference. Overridable via ``PGSSLMODE`` for a local server.
@@ -33,18 +33,53 @@ class DatabaseConfigError(RuntimeError):
     """Raised when no connection details could be found at all."""
 
 
-def load_env_file(path: Path = ENV_FILE) -> dict[str, str]:
+def find_env_file() -> Path | None:
+    """Find the .env file across frozen executable and project locations."""
+    candidates: list[Path] = []
+
+    # 1. If running as a frozen executable (PyInstaller)
+    if getattr(sys, "frozen", False):
+        exe_path = Path(sys.executable).resolve()
+        candidates.append(exe_path.parent / ".env")
+        if len(exe_path.parents) > 1:
+            candidates.append(exe_path.parents[1] / ".env")
+
+    # 2. Current working directory
+    candidates.append(Path.cwd() / ".env")
+
+    # 3. Source tree location (when running directly from Python)
+    try:
+        candidates.append(DEFAULT_SOURCE_ENV)
+    except Exception:
+        pass
+
+    # 4. Desktop / Home directories
+    candidates.append(Path.home() / "Desktop" / ".env")
+    candidates.append(Path.home() / ".env")
+
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate
+        except Exception:
+            continue
+
+    return None
+
+
+def load_env_file(path: Path | None = None) -> dict[str, str]:
     """Parse a minimal ``KEY=value`` file. Missing file yields ``{}``.
 
     Deliberately small: blank lines, ``#`` comments, an optional ``export``
     prefix, and surrounding quotes. Anything more elaborate belongs in a real
     dotenv library.
     """
-    if not path.is_file():
+    target_path = path if path is not None else find_env_file()
+    if target_path is None or not target_path.is_file():
         return {}
 
     values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    for raw_line in target_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -111,10 +146,15 @@ def resolve_dsn(explicit: str | None = None) -> str:
     if dsn:
         return dsn
 
+    env_path = find_env_file() or (
+        Path(sys.executable).resolve().parent / ".env"
+        if getattr(sys, "frozen", False)
+        else DEFAULT_SOURCE_ENV
+    )
     raise DatabaseConfigError(
         "No PostgreSQL connection details found.\n\n"
         "Set DATABASE_URL to your Neon connection string, either as an "
-        f"environment variable or in {ENV_FILE}:\n\n"
+        f"environment variable or in {env_path}:\n\n"
         "    DATABASE_URL=postgresql://user:password@host.neon.tech/dbname?sslmode=require\n"
     )
 

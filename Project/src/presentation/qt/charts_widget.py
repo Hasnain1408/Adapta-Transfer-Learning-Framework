@@ -122,6 +122,11 @@ class AnalyticsChartsWidget(QWidget):
         else:
             self._show_placeholder()
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._last_result is not None:
+            self._render_charts()
+
     def _show_placeholder(self) -> None:
         self._figure.clear()
         ax = self._figure.add_subplot(111)
@@ -136,11 +141,15 @@ class AnalyticsChartsWidget(QWidget):
             color=self._palette.get("text_muted", "#8a97a5"),
             transform=ax.transAxes,
         )
-        self._canvas.draw()
+        try:
+            self._canvas.draw_idle()
+        except Exception:
+            pass
 
     def update_result(self, result: TransferLearningResult) -> None:
         self._last_result = result
-        self._render_charts()
+        if self.isVisible():
+            self._render_charts()
 
     def clear(self) -> None:
         """Drop the rendered run and go back to the placeholder."""
@@ -151,7 +160,7 @@ class AnalyticsChartsWidget(QWidget):
         self._show_placeholder()
 
     def _on_view_changed(self, text: str) -> None:
-        if self._last_result is not None:
+        if self._last_result is not None and self.isVisible():
             self._render_charts()
 
     def _render_charts(self) -> None:
@@ -175,8 +184,14 @@ class AnalyticsChartsWidget(QWidget):
             ax = self._figure.add_subplot(111)
             plot_metrics(ax, result, self._palette)
 
-        self._figure.tight_layout()
-        self._canvas.draw()
+        try:
+            self._figure.tight_layout()
+        except Exception:
+            pass
+        try:
+            self._canvas.draw_idle()
+        except Exception:
+            pass
 
     def _render_overview(self, result: TransferLearningResult) -> None:
         has_metrics = result.metrics is not None and result.target_predictions is not None
@@ -202,6 +217,7 @@ class AnalyticsChartsWidget(QWidget):
         if self._last_result is None:
             return ""
 
+        self._render_charts()
         buf = io.BytesIO()
         self._figure.savefig(buf, format="png", bbox_inches="tight", dpi=150)
         buf.seek(0)

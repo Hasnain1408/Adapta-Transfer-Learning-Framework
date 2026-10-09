@@ -77,8 +77,8 @@ LIGHT_PALETTE: dict[str, str] = {
     "metric_amber": "#d1930f",
     "metric_pink": "#d1478f",
     # Overlay surfaces
-    "tooltip_bg": "#171d26",
-    "tooltip_text": "#eaeff5",
+    "tooltip_bg": "#f0f2f7",
+    "tooltip_text": "#171d26",
 }
 
 #: Default/back-compat export — prefer ``DARK_PALETTE`` / ``LIGHT_PALETTE`` and

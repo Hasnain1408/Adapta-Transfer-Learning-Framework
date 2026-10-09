@@ -13,17 +13,26 @@ from PyQt5.QtWidgets import QLineEdit, QMainWindow, QVBoxLayout, QWidget
 from presentation.qt.title_bar import TitleBar
 
 class ClickableLineEdit(QLineEdit):
-    """Read-only line edit that emits ``clicked`` on any mouse press.
+    """Read-only line edit that emits ``clicked`` on a clean mouse click.
 
     Used for the dataset path fields so clicking anywhere in the field opens
-    the file browser dialog, not just the adjacent "Browse…" button.
+    the file browser dialog.
     """
 
     clicked = pyqtSignal()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt naming
-        self.clicked.emit()
+        if event.button() == Qt.LeftButton:
+            event.accept()
+            return
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        if event.button() == Qt.LeftButton and self.rect().contains(event.pos()):
+            event.accept()
+            self.clicked.emit()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class FullScreenViewer(QMainWindow):

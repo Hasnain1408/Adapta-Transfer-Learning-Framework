@@ -279,7 +279,6 @@ class MainWindowLayoutMixin:
         self._classifier_label = self._field_label("Classifier")
         self._kernel_label = self._field_label("Kernel")
         self._norm_label = self._field_label("Normalization")
-        self._std_label = self._field_label("Standardization")
         self._reg_label = self._field_label("Regularization (λ)")
         self._dim_label = self._field_label("Latent Dimensions")
         self._mu_label = self._field_label("Mu (μ)")
@@ -297,7 +296,6 @@ class MainWindowLayoutMixin:
             (self._classifier_label, self._classifier_combo),
             (self._kernel_label, self._kernel_combo),
             (self._norm_label, self._norm_combo),
-            (self._std_label, self._std_combo),
             (self._reg_label, self._reg_input),
             (self._dim_label, self._dim_input),
             (self._mu_label, self._mu_input),
@@ -439,8 +437,8 @@ class MainWindowLayoutMixin:
         predictions_layout.addLayout(filter_row)
         predictions_layout.addWidget(self._predictions_table, 1)
 
-        features_page = QWidget()
-        features_layout = QVBoxLayout(features_page)
+        self._features_page = QWidget()
+        features_layout = QVBoxLayout(self._features_page)
         features_layout.setContentsMargins(12, 10, 12, 12)
         features_layout.setSpacing(8)
         features_layout.addWidget(self._features_caption)
@@ -472,9 +470,7 @@ class MainWindowLayoutMixin:
         self._history_tab = HistoryTab(self._catalog, self._palette)
 
         self._results_tabs.addTab(predictions_page, "Predictions")
-        self._results_tabs.addTab(self._charts_widget, "Visualizations")
-        self._results_tabs.addTab(self._visualization_tab, "Feature Space")
-        self._results_tabs.addTab(features_page, "Transformed Features")
+        self._results_tabs.addTab(self._visualization_tab, "Visualizations")
         self._results_tabs.addTab(self._summary_view, "Dataset Summary")
         # Named for what it holds — the methods of *this* run — to keep it
         # distinct from "Comparison", which ranks across saved experiments.
