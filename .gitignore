@@ -34,6 +34,13 @@ env/
 .env/
 .venv/
 
+# Secrets — the database connection string lives here.
+# Note the trailing slash above only matches a *directory* named .env;
+# these patterns are what keep the credentials file itself out of git.
+.env
+.env.*
+!.env.example
+
 # IDE/Editor
 .vscode/
 .idea/
@@ -58,6 +65,10 @@ code practice/static_metric_extractor/test/fprime/
 # Other files
 code
 Papers
-Proposal
 Project/Datasets
 Project/src/__pycache__
+
+# Don't need to track these files, 
+CLAUDE.md
+Project/main.spec
+Project/Prompt.txt

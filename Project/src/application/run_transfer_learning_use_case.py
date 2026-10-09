@@ -1,36 +1,70 @@
+"""``RunTransferLearningUseCase`` — orchestrates one run or a batch of runs.
+
+The work is split across sibling modules, one per concern:
+
+- ``run_pipeline.py`` — the individual stages, shared by the paths below.
+- ``run_single_execution.py`` — the ``execute`` pipeline for one pair.
+- ``run_batch_execution.py`` — ``execute_batch``, fanning it over every pair.
+- ``run_multi_method_execution.py`` — ``execute_multi_method``, fanning it
+  over every *method* on one pair, sharing a single preparation.
+- ``run_tunables.py`` — which request fields a method actually accepts.
+- ``preprocessing.py`` — normalization/standardization transforms.
+- ``classification.py`` — classifier factory + fit/score evaluation.
+- ``domain_alignment.py`` — MMD/overlap measurement before vs. after.
+
+This file is left holding the wiring: the loader and the method registry,
+and the small accessors the UI asks about before starting anything.
+"""
+
 from __future__ import annotations
 
+from application.run_batch_execution import RunBatchExecutionMixin
+from application.run_multi_method_execution import RunMultiMethodExecutionMixin
+from application.run_single_execution import RunSingleExecutionMixin
+from application.run_tunables import TUNABLE_PARAMETERS, supported_parameters_for
 from domain.interfaces import DatasetLoader, TransferLearningMethod
-from domain.models import TransferLearningRequest, TransferLearningResult
 
 
-class RunTransferLearningUseCase:
+class RunTransferLearningUseCase(
+    RunSingleExecutionMixin, RunBatchExecutionMixin, RunMultiMethodExecutionMixin
+):
+    """Runs a transfer-learning method over a source/target dataset pair."""
+
     def __init__(self, loader: DatasetLoader, methods: list[TransferLearningMethod]) -> None:
         self._loader = loader
         self._methods = {method.name: method for method in methods}
 
-    def execute(self, request: TransferLearningRequest) -> TransferLearningResult:
-        if request.method_name not in self._methods:
-            supported = ", ".join(sorted(self._methods.keys()))
-            raise ValueError(f"Unsupported method: {request.method_name}. Supported: {supported}")
+    @property
+    def method_names(self) -> list[str]:
+        """Registered method names, in the order they were configured."""
+        return list(self._methods)
 
-        source_dataset = self._loader.load(request.source_path)
-        target_dataset = self._loader.load(request.target_path)
+    def dataset_has_combined_domains(self, path: str) -> bool:
+        """Whether *path* alone carries both a source and a target half.
 
-        if source_dataset.features.size == 0 or target_dataset.features.size == 0:
-            raise ValueError("Source and target datasets must contain at least one feature row.")
+        Delegates to the loader when it supports the check (only
+        ``MATDatasetLoader`` does today); other ``DatasetLoader``
+        implementations simply report ``False``, meaning "use two files".
+        """
+        checker = getattr(self._loader, "has_combined_domains", None)
+        return bool(checker(path)) if checker is not None else False
 
-        method = self._methods[request.method_name]
-        transformed_target = method.run(source_dataset.features, target_dataset.features)
+    def supported_parameters(self, method_name: str) -> frozenset[str]:
+        """Which tunable parameters the named method actually consumes.
 
-        output_feature_names = [
-            f"{request.method_name.lower()}_feature_{index + 1}"
-            for index in range(transformed_target.shape[1])
-        ]
+        Mirrors the ``hasattr`` rule ``execute`` uses to inject them, so the UI
+        can disable controls that would otherwise be silently ignored.
+        """
+        method = self._methods.get(method_name)
+        if method is None:
+            return frozenset()
+        return supported_parameters_for(method)
 
-        return TransferLearningResult(
-            source_dataset=source_dataset,
-            target_dataset=target_dataset,
-            transformed_target=transformed_target,
-            output_feature_names=output_feature_names,
-        )
+
+__all__ = [
+    "TUNABLE_PARAMETERS",
+    "RunBatchExecutionMixin",
+    "RunMultiMethodExecutionMixin",
+    "RunSingleExecutionMixin",
+    "RunTransferLearningUseCase",
+]

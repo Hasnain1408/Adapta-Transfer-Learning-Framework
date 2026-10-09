@@ -1,188 +1,319 @@
+"""``MainWindow`` composition root.
+
+The class itself only owns window-level lifecycle (``__init__``,
+``changeEvent``, ``closeEvent``) and shared state (``self._palette``,
+``self._last_result``, …). Everything else is implemented by the mixins
+below, one per concern:
+
+- ``MainWindowUIMixin`` — widget/layout/menu construction, signal wiring.
+- ``MainWindowSessionMixin`` — auth, database dialogs, history persistence.
+- ``MainWindowThemeMixin`` — dark/light theme, Learning Materials dialog.
+- ``MainWindowRunMixin`` — dataset/batch picking, worker lifecycle, run state.
+- ``MainWindowResultsMixin`` — metrics/predictions/features rendering.
+- ``MainWindowReportMixin`` — PDF report export.
+
+Read this file first to see the whole window at a glance, then follow into
+whichever mixin covers the behaviour you're looking for.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
-    QAbstractItemView,
-    QFileDialog,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMainWindow,
-    QMessageBox,
-    QPushButton,
-    QComboBox,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt5.QtCore import QEvent, Qt
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QApplication, QMainWindow
 
+from application.authentication_use_case import AuthenticationUseCase
+from application.experiment_catalog_use_case import ExperimentCatalogUseCase
 from application.run_transfer_learning_use_case import RunTransferLearningUseCase
-from domain.models import TransferLearningRequest, TransferLearningResult
-from presentation.qt.worker import TransferLearningWorker
+from domain.entities import User
+from domain.models import (
+    BatchTransferLearningRequest,
+    BatchTransferLearningResult,
+    MultiMethodTransferLearningRequest,
+    MultiMethodTransferLearningResult,
+    TransferLearningRequest,
+    TransferLearningResult,
+)
+from domain.run_control import RunControl
+from presentation.qt import message_box
+from presentation.qt.experiment_detail_view import ExperimentDetailView
+from presentation.qt.main_window_report import MainWindowReportMixin
+from presentation.qt.main_window_results import MainWindowResultsMixin
+from presentation.qt.main_window_run import MainWindowRunMixin
+from presentation.qt.main_window_session import MainWindowSessionMixin
+from presentation.qt.main_window_theme import MainWindowThemeMixin
+from presentation.qt.main_window_ui import MainWindowUIMixin
+from presentation.qt.pair_detail_view import PairDetailView
+from presentation.qt.style import DARK_PALETTE
+from presentation.qt.worker import BatchTransferLearningWorker, TransferLearningWorker
 
 
-class MainWindow(QMainWindow):
-    def __init__(self, use_case: RunTransferLearningUseCase) -> None:
+class MainWindow(
+    MainWindowUIMixin,
+    MainWindowSessionMixin,
+    MainWindowThemeMixin,
+    MainWindowRunMixin,
+    MainWindowResultsMixin,
+    MainWindowReportMixin,
+    QMainWindow,
+):
+    def __init__(
+        self,
+        use_case: RunTransferLearningUseCase,
+        catalog: ExperimentCatalogUseCase | None = None,
+        auth: AuthenticationUseCase | None = None,
+        current_user: User | None = None,
+        database_error: str | None = None,
+    ) -> None:
+        """*catalog* is ``None`` when the database could not be reached.
+
+        The app deliberately stays usable in that state — experiments still
+        run, they just are not recorded — so a Neon outage or a missing
+        ``DATABASE_URL`` degrades the feature rather than blocking start-up.
+        ``database_error`` carries the reason, shown once in the status bar.
+
+        *current_user* is the account currently signed in when the window is
+        created. It is usually ``None`` because sign-in is now optional and is
+        only prompted from the header button when the user asks for it.
+        """
         super().__init__()
         self._use_case = use_case
-        self._worker: TransferLearningWorker | None = None
+        self._catalog = catalog
+        self._auth = auth
+        self._database_error = database_error
+        self._current_user = current_user
+        self._worker: TransferLearningWorker | BatchTransferLearningWorker | None = None
+        self._run_control: RunControl | None = None
+        self._progress_color_index = 0
+        self._last_result: TransferLearningResult | None = None
+        self._last_request: TransferLearningRequest | None = None
+        self._last_batch_request: BatchTransferLearningRequest | None = None
+        self._last_batch_result: BatchTransferLearningResult | None = None
+        self._last_multi_request: MultiMethodTransferLearningRequest | None = None
+        self._last_multi_result: MultiMethodTransferLearningResult | None = None
+        #: "single" | "batch" | "multi" | None — which of the _last_*_result
+        #: fields the sidebar's Export Report should build a report from.
+        self._last_run_kind: str | None = None
+        self._method_results_tab_index = -1
+        self._batch_results_tab_index = -1
+        self._theme = "dark"
+        self._palette = DARK_PALETTE
+        self._status_key = "neutral"
+        self._history_tab_index = -1
+        #: experiment id -> its open detail tab widget, so a second click on
+        #: the same row raises the existing tab instead of duplicating it.
+        self._experiment_detail_tabs: dict[int, ExperimentDetailView] = {}
+        #: id(pair) -> its open detail tab widget, same idea as above but for
+        #: batch pairs, which have no persisted id to key on.
+        self._pair_detail_tabs: dict[int, PairDetailView] = {}
+        #: id(method entry) -> its open detail tab, for one method of a
+        #: comparison. Keyed on the entry rather than the method name so two
+        #: comparisons in a row cannot collide on "TCA".
+        self._method_detail_tabs: dict[int, PairDetailView] = {}
 
-        self.setWindowTitle("Transfer Learning Desktop App")
-        self.resize(1000, 680)
+        self.setWindowTitle("Adapta: Transfer Learning Studio")
+        self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets" / "app_icon.svg")))
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setMinimumSize(1000, 720)
+        self.resize(1180, 820)
+        self._apply_theme_stylesheet()
 
-        self._method_combo = QComboBox()
-        self._method_combo.addItems(["TCA"])
-        self._method_combo.addItems(["JDA"])
-
-        self._source_input = QLineEdit()
-        self._source_input.setPlaceholderText("Select source CSV or XLSX dataset")
-        self._target_input = QLineEdit()
-        self._target_input.setPlaceholderText("Select target CSV or XLSX dataset")
-
-        self._browse_source_button = QPushButton("Browse")
-        self._browse_target_button = QPushButton("Browse")
-        self._run_button = QPushButton("Run Transfer Learning")
-        self._status_label = QLabel("Status: Ready")
-
-        self._dataset_summary_table = QTableWidget()
-        self._dataset_summary_table.setColumnCount(5)
-        self._dataset_summary_table.setHorizontalHeaderLabels(
-            ["Dataset", "Rows", "Feature Size", "Feature Names", "Label Name"]
-        )
-        self._dataset_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._dataset_summary_table.setSelectionMode(QAbstractItemView.NoSelection)
-        self._dataset_summary_table.setFocusPolicy(Qt.NoFocus)
-
-        self._result_table = QTableWidget()
-        self._result_table.setColumnCount(0)
-        self._result_table.setRowCount(0)
-
+        self._build_widgets()
+        self._build_menu()
+        self._build_title_bar()
         self._build_layout()
+        self._build_status_bar()
         self._connect_signals()
+        self._sync_method_parameters()
+        self._update_auth_ui()
+        # The app opens on the landing page; the workspace is one click away
+        # and is built and ready behind it.
+        self._show_landing()
 
-    def _build_layout(self) -> None:
-        central_widget = QWidget(self)
-        root_layout = QVBoxLayout(central_widget)
+    # ------------------------------------------------------------------
+    # Landing page navigation
+    # ------------------------------------------------------------------
+    def _show_landing(self) -> None:
+        """Bring the landing page to the front.
 
-        form_layout = QGridLayout()
+        Safe at any time, including mid-run: the workspace page is only
+        stacked behind, not torn down, and the status bar carrying the
+        experiment's progress belongs to the window rather than either page.
+        """
+        self._update_landing_session()
+        self._page_stack.setCurrentIndex(0)
+        # A full application menu over a landing page reads like a leftover
+        # from the screen behind it. Menu-action shortcuts keep working while
+        # it is hidden (they are scoped to the window, not to the menu bar's
+        # visibility), so Ctrl+H still comes back here.
+        self._menu_bar.setVisible(False)
 
-        form_layout.addWidget(QLabel("Method"), 0, 0)
-        form_layout.addWidget(self._method_combo, 0, 1, 1, 2)
+    def _show_workspace(self) -> None:
+        self._page_stack.setCurrentIndex(1)
+        self._menu_bar.setVisible(True)
 
-        form_layout.addWidget(QLabel("Source Dataset"), 1, 0)
-        form_layout.addWidget(self._source_input, 1, 1)
-        form_layout.addWidget(self._browse_source_button, 1, 2)
+    def _update_landing_session(self) -> None:
+        """Push database/auth state onto the landing page's cards."""
+        landing = getattr(self, "_landing_page", None)
+        if landing is None:
+            return
+        landing.set_session(
+            has_database=self._catalog is not None,
+            signed_in=self._current_user is not None,
+            user_label=self._user_label.text(),
+        )
+        landing.set_theme_label(self._theme_toggle_button.text())
 
-        form_layout.addWidget(QLabel("Target Dataset"), 2, 0)
-        form_layout.addWidget(self._target_input, 2, 1)
-        form_layout.addWidget(self._browse_target_button, 2, 2)
+    def _navigate_from_landing(self, key: str) -> None:
+        """Route one landing-page choice to the thing it names.
 
-        action_layout = QHBoxLayout()
-        action_layout.addWidget(self._run_button)
-        action_layout.addWidget(self._status_label)
-        action_layout.setAlignment(self._status_label, Qt.AlignVCenter)
+        The whole mapping lives here so ``LandingPage`` stays a view that
+        emits names and knows nothing about the window's internals.
+        """
+        if key == "experiment":
+            self._show_workspace()
+            if self._batch_mode_check.isEnabled():
+                self._batch_mode_check.setChecked(False)
+        elif key == "batch":
+            self._show_workspace()
+            if self._batch_mode_check.isEnabled():
+                self._batch_mode_check.setChecked(True)
+        elif key == "comparison":
+            self._open_workspace_tab(self._comparison_tab)
+        elif key == "history":
+            self._open_history_from_landing()
+        elif key == "registry":
+            # Dialogs open over whichever page is showing, so the user comes
+            # back to the landing page rather than being dropped into the
+            # workspace by a side effect of closing a dialog. The database
+            # check is here because _open_dataset_registry returns silently
+            # without one, and a card that swallows the click explains
+            # nothing.
+            if self._catalog is None:
+                self._explain_database_outage()
+            else:
+                self._open_dataset_registry()
+        elif key == "learning":
+            self._open_learning_materials(0)
+        elif key == "auth":
+            self._handle_auth_button_clicked()
+            self._update_landing_session()
+        elif key == "theme":
+            self._toggle_theme()
+        elif key == "exit":
+            self._exit_application()
 
-        root_layout.addLayout(form_layout)
-        root_layout.addLayout(action_layout)
-        root_layout.addWidget(QLabel("Source and Target Dataset Summary"))
-        root_layout.addWidget(self._dataset_summary_table)
-        root_layout.addWidget(QLabel("Transformed Target Dataset (preview)"))
-        root_layout.addWidget(self._result_table)
-
-        self.setCentralWidget(central_widget)
-
-    def _connect_signals(self) -> None:
-        self._browse_source_button.clicked.connect(lambda: self._pick_file(self._source_input))
-        self._browse_target_button.clicked.connect(lambda: self._pick_file(self._target_input))
-        self._run_button.clicked.connect(self._run_transfer_learning)
-
-    def _pick_file(self, target_input: QLineEdit) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
+    def _explain_database_outage(self) -> None:
+        """Say why a database-backed module is unreachable."""
+        message_box.info(
             self,
-            "Select Dataset",
-            str(Path.cwd()),
-            "Dataset Files (*.csv *.xlsx);;CSV Files (*.csv);;Excel Files (*.xlsx)",
-        )
-        if file_path:
-            target_input.setText(file_path)
-
-    def _run_transfer_learning(self) -> None:
-        source_path = self._source_input.text().strip()
-        target_path = self._target_input.text().strip()
-
-        if not source_path or not target_path:
-            QMessageBox.warning(self, "Missing Input", "Please select both source and target datasets.")
-            return
-
-        if not Path(source_path).exists() or not Path(target_path).exists():
-            QMessageBox.warning(self, "Invalid Path", "One or more selected dataset files do not exist.")
-            return
-
-        request = TransferLearningRequest(
-            method_name=self._method_combo.currentText(),
-            source_path=source_path,
-            target_path=target_path,
+            "Database Unavailable",
+            "This module reads from the experiment database.",
+            "Adapta could not connect, so there is nothing to show here yet. "
+            "Experiments still run — they just aren't recorded.",
         )
 
-        self._run_button.setEnabled(False)
-        self._status_label.setText("Status: Running in background...")
+    def _open_workspace_tab(self, tab) -> None:
+        """Switch to the workspace with *tab* selected in the results area."""
+        if self._catalog is None:
+            self._explain_database_outage()
+            return
+        self._show_workspace()
+        # The results area starts on its empty-state page; these tabs are
+        # populated from the database, not from a run, so they are worth
+        # showing before any experiment has finished.
+        self._results_stack.setCurrentIndex(1)
+        index = self._results_tabs.indexOf(tab)
+        if index >= 0:
+            self._results_tabs.setCurrentIndex(index)
 
-        self._worker = TransferLearningWorker(self._use_case, request)
-        self._worker.succeeded.connect(self._on_success)
-        self._worker.failed.connect(self._on_error)
-        self._worker.finished.connect(lambda: self._run_button.setEnabled(True))
-        self._worker.start()
+    def _open_history_from_landing(self) -> None:
+        """History needs both a database and a signed-in user."""
+        if self._catalog is None:
+            self._open_workspace_tab(self._history_tab)  # explains the outage
+            return
+        if self._current_user is None:
+            self._show_login_dialog()
+            self._update_landing_session()
+            if self._current_user is None:
+                return
+        self._show_workspace()
+        self._show_history()
 
-    def _on_success(self, result: TransferLearningResult) -> None:
-        self._status_label.setText("Status: Completed")
-        self._show_dataset_summary(result.source_dataset, result.target_dataset)
-        self._show_result(result.transformed_target, result.output_feature_names)
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange:
+            self._title_bar.refresh_maximize_glyph()
 
-    def _on_error(self, message: str) -> None:
-        self._status_label.setText("Status: Failed")
-        QMessageBox.critical(self, "Transfer Learning Failed", message)
+    def _stop_background_work(self) -> None:
+        """Bring any in-flight run to a halt before the window goes away.
 
-    def _show_result(self, matrix: np.ndarray, headers: list[str]) -> None:
-        row_count, col_count = matrix.shape
-        preview_rows = min(row_count, 200)
+        Shared by ``closeEvent`` and :meth:`_exit_application`, which reach
+        shutdown by different routes — the window manager's close button
+        versus the app's own Exit System button — but must leave the same
+        state behind: no QThread still touching objects Qt is about to
+        destroy.
+        """
+        worker = self._worker
+        try:
+            still_running = worker is not None and worker.isRunning()
+        except RuntimeError:
+            # The QThread's C++ side is already gone (deleteLater ran);
+            # nothing left to stop.
+            return
+        if still_running:
+            # A paused run is blocked indefinitely on its checkpoint, so it
+            # has to be cancelled before waiting on it, or this would hang
+            # until the timeout with the thread still alive afterwards.
+            if self._run_control is not None:
+                self._run_control.cancel()
+            worker.wait(3000)
 
-        self._result_table.clear()
-        self._result_table.setRowCount(preview_rows)
-        self._result_table.setColumnCount(col_count)
-        self._result_table.setHorizontalHeaderLabels(headers)
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self._stop_background_work()
+        super().closeEvent(event)
 
-        for row in range(preview_rows):
-            for col in range(col_count):
-                value = f"{matrix[row, col]:.6f}"
-                self._result_table.setItem(row, col, QTableWidgetItem(value))
+    def _exit_application(self) -> None:
+        """Quit the whole app: the sidebar's Exit System button and Ctrl+Q.
 
-    def _show_dataset_summary(self, source_dataset, target_dataset) -> None:
-        summaries = [
-            ("Source", source_dataset),
-            ("Target", target_dataset),
-        ]
+        Not simply ``self.close()``. Closing only this window leaves the app
+        running whenever another top-level window is open — the full-screen
+        results viewer and the Learning Materials dialog are both parented to
+        ``None`` — so the process would linger with no way back to it. This
+        ends the event loop outright, which lets ``main()`` run its
+        ``finally`` and close the database connection.
+        """
+        running = self._is_worker_busy()
+        if running:
+            headline = f"{self._busy_description()} is still running."
+            detail = (
+                "Exiting now stops it partway and discards its results. "
+                "Anything already saved to history is unaffected."
+            )
+        else:
+            headline = "Exit Adapta?"
+            detail = (
+                "Results on screen will be discarded. Experiments already "
+                "recorded in history are kept."
+            )
+        if not message_box.confirm(
+            self,
+            "Exit System",
+            headline,
+            detail,
+            confirm_label="Exit",
+            destructive=running,
+        ):
+            return
 
-        self._dataset_summary_table.setRowCount(len(summaries))
+        self._stop_background_work()
+        application = QApplication.instance()
+        if application is not None:
+            application.quit()
+        else:  # pragma: no cover - only reachable outside a running app
+            self.close()
 
-        for row, (dataset_label, dataset) in enumerate(summaries):
-            feature_names = ", ".join(dataset.feature_names)
-            values = [
-                dataset_label,
-                str(dataset.features.shape[0]),
-                str(dataset.features.shape[1]),
-                feature_names,
-                dataset.label_name,
-            ]
 
-            for col, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                if col == 3:
-                    item.setToolTip(feature_names)
-                self._dataset_summary_table.setItem(row, col, item)
-
-        self._dataset_summary_table.resizeColumnsToContents()
+__all__ = ["MainWindow"]

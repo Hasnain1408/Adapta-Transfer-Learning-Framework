@@ -1,34 +1,19 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
 
 from domain.models import Dataset
+from infrastructure.data.dataset_loader import DatasetFormatLoader
 
 
-class CSVDatasetLoader:
-    def load(self, path: str) -> Dataset:
-        file_suffix = Path(path).suffix.lower()
+class CSVDatasetLoader(DatasetFormatLoader):
+    """Loads a ``.csv`` file where the last column is the label."""
 
-        if file_suffix == ".csv":
-            dataframe = pd.read_csv(path)
-        elif file_suffix == ".xlsx":
-            dataframe = pd.read_excel(path, engine="openpyxl")
-        else:
-            raise ValueError("Unsupported dataset format. Use .csv or .xlsx files.")
+    extensions = (".csv",)
 
-        if dataframe.shape[1] < 2:
-            raise ValueError("Dataset must have at least 2 columns: features + label column.")
+    def load(self, path: str, is_source: bool = True) -> Dataset:
+        dataframe = pd.read_csv(path)
+        return self._dataframe_to_dataset(dataframe)
 
-        features_df = dataframe.iloc[:, :-1].apply(pd.to_numeric, errors="coerce").fillna(0.0)
-        labels_series = dataframe.iloc[:, -1]
-        feature_names = [str(column) for column in dataframe.columns[:-1]]
-        label_name = str(dataframe.columns[-1])
 
-        return Dataset(
-            features=features_df.to_numpy(dtype=float),
-            labels=labels_series.to_numpy(),
-            feature_names=feature_names,
-            label_name=label_name,
-        )
+__all__ = ["CSVDatasetLoader"]
