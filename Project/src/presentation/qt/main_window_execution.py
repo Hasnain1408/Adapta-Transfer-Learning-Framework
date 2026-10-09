@@ -30,7 +30,6 @@ from presentation.qt.result_tables import (
     populate_method_results_table,
 )
 from presentation.qt.style import build_style_sheet
-from presentation.qt.title_bar import install_title_bar_on_grid
 from presentation.qt.worker import (
     BatchTransferLearningWorker,
     MultiMethodTransferLearningWorker,
@@ -631,21 +630,17 @@ class MainWindowExecutionMixin:
         """Lives here because what it lists — the registered methods — comes
         off the same use case this module drives."""
         title = "About Adapta: Transfer Learning Studio"
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Information)
-        box.setWindowTitle(title)
-        box.setStyleSheet(build_style_sheet(self._palette))
-        box.setText(
-            "<b>Adapta: Transfer Learning Studio</b>"
-            "<p>Desktop workbench for domain adaptation experiments.</p>"
-            "<p>Methods: "
+        message_box.information(
+            self,
+            title,
+            "Adapta: Transfer Learning Studio",
+            "Desktop workbench for domain adaptation experiments.\n\n"
+            + "Methods: "
             + ", ".join(self._use_case.method_names)
-            + ".<br>Classifiers: k-NN, SVM, Random Forest, Logistic Regression, Decision Tree.<br>"
+            + ".\nClassifiers: k-NN, SVM, Random Forest, Logistic Regression, Decision Tree.\n\n"
             "The selected classifier is fitted on the transformed source domain and "
-            "evaluated on the transformed target domain.</p>"
+            "evaluated on the transformed target domain.",
         )
-        install_title_bar_on_grid(box, title)
-        box.exec_()
 
 
 __all__ = ["MainWindowExecutionMixin"]

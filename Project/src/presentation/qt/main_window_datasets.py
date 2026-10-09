@@ -15,7 +15,6 @@ from PyQt5.QtWidgets import QDialog, QFileDialog, QLineEdit
 
 from presentation.qt.main_window_ui import DATASET_FILTER
 from presentation.qt.style import build_style_sheet
-from presentation.qt.title_bar import install_title_bar_on_grid
 
 
 class MainWindowDatasetsMixin:
@@ -42,13 +41,16 @@ class MainWindowDatasetsMixin:
         self._target_input.setText(source_text)
 
     def _pick_file(self, target_input: QLineEdit, title: str) -> None:
-        start_dir = target_input.text().strip() or str(Path.cwd())
+        current_text = target_input.text().strip()
+        if current_text and Path(current_text).exists():
+            start_dir = str(Path(current_text).parent if Path(current_text).is_file() else Path(current_text))
+        else:
+            start_dir = str(Path.cwd())
         dialog = QFileDialog(self, title, start_dir, DATASET_FILTER)
         dialog.setOption(QFileDialog.DontUseNativeDialog, True)
         dialog.setFileMode(QFileDialog.ExistingFile)
         dialog.setAcceptMode(QFileDialog.AcceptOpen)
         dialog.setStyleSheet(build_style_sheet(self._palette))
-        install_title_bar_on_grid(dialog, title)
         if dialog.exec_() == QDialog.Accepted:
             selected_files = dialog.selectedFiles()
             if selected_files:
@@ -140,7 +142,6 @@ class MainWindowDatasetsMixin:
         dialog.setFileMode(QFileDialog.ExistingFiles)
         dialog.setAcceptMode(QFileDialog.AcceptOpen)
         dialog.setStyleSheet(build_style_sheet(self._palette))
-        install_title_bar_on_grid(dialog, "Select Dataset Files")
         file_paths = []
         if dialog.exec_() == QDialog.Accepted:
             file_paths = dialog.selectedFiles()
