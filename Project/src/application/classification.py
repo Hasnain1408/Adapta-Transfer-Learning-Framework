@@ -45,7 +45,7 @@ def build_classifier(name: str):
     if name == "Decision Tree":
         return DecisionTreeClassifier(random_state=42)
     # Default / "k-NN"
-    return KNeighborsClassifier(n_neighbors=5)
+    return KNeighborsClassifier(n_neighbors=1)
 
 
 def evaluate_classifier(
